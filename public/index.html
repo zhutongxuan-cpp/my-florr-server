@@ -1,131 +1,114 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
-    <title>花瓣网游</title>
+    <meta charset="UTF-8">
+    <title>My Florr.io</title>
     <style>
-        body { text-align: center; font-family: sans-serif; background-color: #222; color: white; margin: 0;}
-        /* 登录框样式 */
-        #login-box { margin-top: 100px; }
-        input { padding: 10px; margin: 5px; font-size: 16px; border-radius: 5px; border: none; }
-        button { padding: 10px 20px; font-size: 16px; cursor: pointer; background: #4CAF50; color: white; border: none; border-radius: 5px;}
-        button.reg { background: #2196F3; }
-        /* 游戏画布样式 */
-        #game-canvas { background-color: #e0f7fa; display: none; margin: 20px auto; border: 5px solid #fff; border-radius: 10px;}
+        body { margin: 0; overflow: hidden; background-color: #222; }
+        canvas { display: block; }
     </style>
 </head>
 <body>
+    <canvas id="gameCanvas"></canvas>
 
-    <!-- 登录界面 -->
-    <div id="login-box">
-        <h1>🌸 花瓣世界 🌸</h1>
-        <p style="color:red; font-size: 12px;">(测试版：请勿使用自己真实的常用密码)</p>
-        <input id="user" type="text" placeholder="账号"><br>
-        <input id="pass" type="password" placeholder="密码"><br>
-        <button onclick="login()">登 录</button>
-        <button class="reg" onclick="register()">注 册</button>
-        <p id="msg"></p>
-    </div>
-
-    <!-- 游戏画面 (初始隐藏) -->
-    <canvas id="game-canvas" width="800" height="600"></canvas>
-
-    <!-- 引入 Socket.io -->
-    <script src="/socket.io/socket.io.js"></script>
     <script>
-        const socket = io();
-        
-        // UI 元素
-        const loginBox = document.getElementById('login-box');
-        const canvas = document.getElementById('game-canvas');
+        const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
-        const msg = document.getElementById('msg');
 
-        // 登录/注册动作
-        function login() {
-            socket.emit('login', { user: user.value, password: pass.value, username: user.value });
-            msg.innerText = "正在登录...";
-        }
-        function register() {
-            socket.emit('register', { user: user.value, password: pass.value, username: user.value });
-            msg.innerText = "正在注册...";
-        }
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
 
-        // 监听服务器报错
-        socket.on('loginError', (errorText) => {
-            msg.innerText = errorText;
-            msg.style.color = "pink";
+        // 🌺 1. 扩充玩家对象：加入花瓣的各种属性
+        const player = {
+            x: canvas.width / 2,
+            y: canvas.height / 2,
+            radius: 20,          // 本体半径
+            color: '#FFD700',    // 本体颜色（金黄）
+            targetX: canvas.width / 2,
+            targetY: canvas.height / 2,
+
+            // --- 新增：花瓣属性 ---
+            petalCount: 5,           // 花瓣数量
+            petalRadius: 10,         // 花瓣大小
+            baseDistance: 40,        // 防守姿态的距离
+            attackDistance: 80,      // 攻击姿态的距离
+            currentDistance: 40,     // 当前实际距离（用于动画平滑过渡）
+            targetDistance: 40,      // 目标距离
+            rotationAngle: 0,        // 当前的旋转角度
+            rotationSpeed: 0.05      // 旋转速度（数字越大转得越快）
+        };
+
+        // 监听鼠标移动，控制本体走向
+        window.addEventListener('mousemove', (e) => {
+            player.targetX = e.clientX;
+            player.targetY = e.clientY;
         });
 
-        // 游戏核心变量
-        let myName = "";
-        let myX = 0, myY = 0;
-        let otherPlayers = {}; // 存放其他所有人的数据
-        const speed = 5; // 移动速度
-
-        // 监听按键状态
-        const keys = {};
-        window.addEventListener('keydown', (e) => keys[e.code] = true);
-        window.addEventListener('keyup', (e) => keys[e.code] = false);
-
-        // 【登录成功！进入游戏】
-        socket.on('loginSuccess', (userData) => {
-            loginBox.style.display = "none"; // 隐藏登录框
-            canvas.style.display = "block";  // 显示游戏画面
-            myName = userData.username;
-            myX = userData.x;
-            myY = userData.y;
-            
-            // 启动游戏画面刷新循环
-            requestAnimationFrame(gameLoop);
+        // ⚔️ 2. 监听鼠标点击，控制姿态切换
+        // 按下鼠标：进入攻击姿态（展开）
+        window.addEventListener('mousedown', () => {
+            player.targetDistance = player.attackDistance;
         });
 
-        // 【接收服务器发来的所有人坐标】
-        socket.on('stateUpdate', (serverPlayers) => {
-            otherPlayers = serverPlayers;
+        // 松开鼠标：回到防守姿态（收缩）
+        window.addEventListener('mouseup', () => {
+            player.targetDistance = player.baseDistance;
         });
 
-        // 【游戏主循环：移动与绘画】
+        // 游戏核心循环
         function gameLoop() {
-            // 1. 处理自己的移动 (WASD 或 方向键)
-            let moved = false;
-            if (keys['KeyW'] || keys['ArrowUp']) { myY -= speed; moved = true; }
-            if (keys['KeyS'] || keys['ArrowDown']) { myY += speed; moved = true; }
-            if (keys['KeyA'] || keys['ArrowLeft']) { myX -= speed; moved = true; }
-            if (keys['KeyD'] || keys['ArrowRight']) { myX += speed; moved = true; }
-
-            // 限制不要跑出屏幕边界
-            if(myX < 20) myX = 20; if(myX > 780) myX = 780;
-            if(myY < 20) myY = 20; if(myY > 580) myY = 580;
-
-            // 2. 如果移动了，就告诉服务器自己的新坐标
-            if (moved) {
-                socket.emit('move', { x: myX, y: myY });
-            }
-
-            // 3. 清空画布
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // 4. 遍历画出所有人
-            for (let id in otherPlayers) {
-                let p = otherPlayers[id];
-                
-                // 画圆圈代表玩家 (别人是红色，自己是蓝色)
-                ctx.beginPath();
-                ctx.arc(p.x, p.y, 20, 0, Math.PI * 2);
-                ctx.fillStyle = (p.username === myName) ? "#4CAF50" : "#F44336"; 
-                ctx.fill();
-                ctx.stroke();
+            // 本体平滑移动
+            player.x += (player.targetX - player.x) * 0.05;
+            player.y += (player.targetY - player.y) * 0.05;
 
-                // 画名字 (在头顶上)
-                ctx.fillStyle = "black";
-                ctx.font = "16px Arial";
-                ctx.textAlign = "center";
-                ctx.fillText(p.username, p.x, p.y - 30);
+            // ⚙️ 3. 更新花瓣的旋转角度和展开距离
+            // 每一帧都增加一点角度，让它转起来
+            player.rotationAngle += player.rotationSpeed;
+            // 核心动画技巧：平滑插值 (Lerp)，让当前距离无限逼近目标距离
+            player.currentDistance += (player.targetDistance - player.currentDistance) * 0.15;
+
+            // 🌸 4. 绘制花瓣 (重点：使用三角函数)
+            for (let i = 0; i < player.petalCount; i++) {
+                // 计算当前花瓣的角度：把 360 度 (Math.PI * 2) 平分给几个花瓣
+                const angle = player.rotationAngle + (i * (Math.PI * 2) / player.petalCount);
+
+                // 根据角度和当前距离，计算花瓣的 X 和 Y 坐标位置
+                const petalX = player.x + Math.cos(angle) * player.currentDistance;
+                const petalY = player.y + Math.sin(angle) * player.currentDistance;
+
+                // 画出花瓣
+                ctx.beginPath();
+                ctx.arc(petalX, petalY, player.petalRadius, 0, Math.PI * 2);
+                ctx.fillStyle = '#FF69B4'; // 花瓣颜色（骚粉色）
+                ctx.fill();
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = '#000';
+                ctx.stroke();
             }
 
-            // 疯狂循环这一帧
+            // 🟡 5. 绘制玩家本体 (放在花瓣后面画，这样本体就会压在花瓣上面，更有层次感)
+            ctx.beginPath();
+            ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
+            ctx.fillStyle = player.color;
+            ctx.fill();
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = '#000';
+            ctx.stroke();
+
+            // 不断循环
             requestAnimationFrame(gameLoop);
         }
+
+        // 启动游戏
+        gameLoop();
+
+        // 窗口拉伸自适应
+        window.addEventListener('resize', () => {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        });
     </script>
 </body>
 </html>
