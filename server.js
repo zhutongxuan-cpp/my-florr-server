@@ -6,73 +6,47 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-// 让 Express 托管 public 文件夹里的前端文件
+// 让 Express 托管 public 文件夹里的静态文件 (index.html)
 app.use(express.static('public'));
 
-// 存储所有在线玩家的数据
+// 存储全服所有玩家的数据
 const players = {};
 
 io.on('connection', (socket) => {
-    console.log('新玩家加入游戏，ID:', socket.id);
+    console.log(`🌸 玩家加入: ${socket.id}`);
 
-    // 初始化玩家数据 (出生点坐标、速度、花瓣旋转角度)
+    // 初始化新玩家的默认数据
     players[socket.id] = {
-        x: 0,
-        y: 0,
-        vx: 0,
-        vy: 0,
-        angle: 0 
+        worldX: 0,
+        worldY: 0,
+        currentDistance: 45,
+        rotationAngle: 0,
+        petalCount: 5
     };
 
-    // 接收玩家发来的鼠标偏移量
-    socket.on('move', (data) => {
-        let player = players[socket.id];
-        if (player) {
-            // 计算鼠标距离中心点的实际距离
-            let dist = Math.hypot(data.dx, data.dy);
-            
-            // 设定最大速度限制 (你可以改这个数字调节手感)
-            let MAX_SPEED = 6;       
-            let speed = dist * 0.02; // 距离转化为速度的比例
-
-            // 核心：如果速度超过最大值，强制锁定在最大速度
-            if (speed > MAX_SPEED) {
-                speed = MAX_SPEED;
-            }
-
-            // 把速度分解给 X 轴和 Y 轴
-            if (dist > 0) {
-                player.vx = (data.dx / dist) * speed;
-                player.vy = (data.dy / dist) * speed;
-            } else {
-                player.vx = 0;
-                player.vy = 0;
-            }
+    // 监听客户端发来的最新状态
+    socket.on('playerUpdate', (data) => {
+        if (players[socket.id]) {
+            players[socket.id].worldX = data.worldX;
+            players[socket.id].worldY = data.worldY;
+            players[socket.id].currentDistance = data.currentDistance;
+            players[socket.id].rotationAngle = data.rotationAngle;
         }
     });
 
-    // 玩家断开连接时，清理数据
+    // 玩家断开连接时，从对象中删除
     socket.on('disconnect', () => {
-        console.log('玩家离开，ID:', socket.id);
+        console.log(`🥀 玩家离开: ${socket.id}`);
         delete players[socket.id];
     });
 });
 
-// 游戏主循环：每秒 60 次更新所有玩家状态并广播
+// 🚀 核心：以 60Hz (约 16.6ms) 的频率将所有玩家状态广播给全服
 setInterval(() => {
-    for (let id in players) {
-        let p = players[id];
-        // 根据速度更新物理坐标
-        p.x += p.vx;
-        p.y += p.vy;
-        // 花瓣自转
-        p.angle += 0.05; 
-    }
-    // 把所有玩家的最新状态发给所有人
-    io.emit('update', players);
+    io.emit('gameState', players);
 }, 1000 / 60);
 
-// Render 会提供 process.env.PORT，本地运行默认 3000
+// Render 会提供 process.env.PORT，如果本地运行则使用 3000
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`游戏服务器已启动！监听端口: ${PORT}`);
