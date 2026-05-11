@@ -1,221 +1,117 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh">
 <head>
     <meta charset="UTF-8">
-    <title>My Florr.io - 多人联机版</title>
+    <title>My Florr Game</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #181818; }
+        /* 让画布占满整个屏幕，去掉滚动条 */
+        body { margin: 0; overflow: hidden; background-color: #e0e0e0; }
         canvas { display: block; }
     </style>
 </head>
-<body oncontextmenu="return false;">
+<body>
     <canvas id="gameCanvas"></canvas>
-
-    <!-- 引入 Socket.io 客户端库 -->
+    
+    <!-- 引入 Socket.io 客户端 -->
     <script src="/socket.io/socket.io.js"></script>
     <script>
+        const socket = io();
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
 
-        // 连接到服务器
-        const socket = io();
-        let otherPlayers = {}; // 存储服务器发来的其他玩家数据
+        let players = {};
+        let mouseX = window.innerWidth / 2;
+        let mouseY = window.innerHeight / 2;
 
-        // 接收全服游戏状态
-        socket.on('gameState', (serverPlayers) => {
-            otherPlayers = serverPlayers;
-        });
+        // 窗口大小自适应
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
 
-        // 🌺 我的本地玩家数据
-        const player = {
-            screenX: canvas.width / 2,
-            screenY: canvas.height / 2,
-            worldX: 0,
-            worldY: 0,
-            
-            petalCount: 5,
-            petalRadius: 10,
-            normalDistance: 45,
-            attackDistance: 90,
-            defendDistance: 25,
-            currentDistance: 45,
-            targetDistance: 45,
-            rotationAngle: 0,
-            rotationSpeed: 0.05,
-
-            maxSpeed: 6,
-            maxMouseDist: 150,
-            mouseX: canvas.width / 2,
-            mouseY: canvas.height / 2
-        };
-
-        const mouseState = { left: false, right: false };
-
+        // 监听鼠标移动，实时把“相对屏幕中心”的偏移量发给服务器
         window.addEventListener('mousemove', (e) => {
-            player.mouseX = e.clientX;
-            player.mouseY = e.clientY;
+            mouseX = e.clientX;
+            mouseY = e.clientY;
+            
+            socket.emit('move', {
+                dx: mouseX - canvas.width / 2,
+                dy: mouseY - canvas.height / 2
+            });
         });
 
-        function updateStance() {
-            if (mouseState.left) player.targetDistance = player.attackDistance;
-            else if (mouseState.right) player.targetDistance = player.defendDistance;
-            else player.targetDistance = player.normalDistance;
-        }
-
-        window.addEventListener('mousedown', (e) => {
-            if (e.button === 0) mouseState.left = true;
-            if (e.button === 2) mouseState.right = true;
-            updateStance();
+        // 接收服务器发来的最新所有玩家坐标
+        socket.on('update', (serverPlayers) => {
+            players = serverPlayers;
         });
 
-        window.addEventListener('mouseup', (e) => {
-            if (e.button === 0) mouseState.left = false;
-            if (e.button === 2) mouseState.right = false;
-            updateStance();
-        });
+        // 渲染函数
+        function draw() {
+            // 清空画布
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // 画网格背景
-        function drawGrid() {
-            ctx.save();
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
-            ctx.lineWidth = 2;
-            const gridSize = 50;
-            const offsetX = -player.worldX % gridSize;
-            const offsetY = -player.worldY % gridSize;
+            const myPlayer = players[socket.id];
 
-            ctx.beginPath();
-            for (let x = offsetX - gridSize; x < canvas.width; x += gridSize) {
-                ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height);
-            }
-            for (let y = offsetY - gridSize; y < canvas.height; y += gridSize) {
-                ctx.moveTo(0, y); ctx.lineTo(canvas.width, y);
-            }
-            ctx.stroke();
-            ctx.restore();
-        }
-
-        // 绘制任意玩家（复用代码，用来画自己和别人）
-        function drawPlayer(x, y, pData, isMe) {
-            // 画花瓣
-            for (let i = 0; i < pData.petalCount; i++) {
-                const angle = pData.rotationAngle + (i * (Math.PI * 2) / pData.petalCount);
-                const petalX = x + Math.cos(angle) * pData.currentDistance;
-                const petalY = y + Math.sin(angle) * pData.currentDistance;
-
+            // 画鼠标指示线 (视觉效果：从屏幕中心连到鼠标当前位置，无长度限制)
+            if (myPlayer) {
                 ctx.beginPath();
-                ctx.arc(petalX, petalY, 10, 0, Math.PI * 2); // petalRadius 暂定为 10
-                ctx.fillStyle = isMe ? '#FF69B4' : '#FF8C00'; // 别人是橙色花瓣，自己是粉色
+                ctx.moveTo(canvas.width / 2, canvas.height / 2); // 玩家始终在屏幕中心
+                ctx.lineTo(mouseX, mouseY); // 直达鼠标
+                ctx.strokeStyle = 'rgba(0, 0, 0, 0.2)';
+                ctx.lineWidth = 4;
+                ctx.stroke();
+            }
+
+            // 画所有的玩家和他们的花瓣
+            for (let id in players) {
+                let p = players[id];
+                
+                // 镜头跟随核心逻辑：
+                // 如果是我自己，就画在屏幕正中心 (canvas.width / 2)
+                // 如果是别人，计算他与我的“相对坐标”画在屏幕上
+                let drawX = canvas.width / 2;
+                let drawY = canvas.height / 2;
+                
+                if (myPlayer && id !== socket.id) {
+                    drawX += (p.x - myPlayer.x);
+                    drawY += (p.y - myPlayer.y);
+                }
+
+                // 画 5 片花瓣
+                let numPetals = 5;
+                for (let i = 0; i < numPetals; i++) {
+                    let angle = p.angle + (i * Math.PI * 2) / numPetals;
+                    // 花瓣距离本体的距离为 35
+                    let petalX = drawX + Math.cos(angle) * 35;
+                    let petalY = drawY + Math.sin(angle) * 35;
+                    
+                    ctx.beginPath();
+                    ctx.arc(petalX, petalY, 12, 0, Math.PI * 2);
+                    ctx.fillStyle = '#ffcc00'; // 花瓣颜色（黄色）
+                    ctx.fill();
+                    ctx.lineWidth = 2;
+                    ctx.strokeStyle = '#000';
+                    ctx.stroke();
+                }
+
+                // 画玩家本体 (绿色的圆)
+                ctx.beginPath();
+                ctx.arc(drawX, drawY, 20, 0, Math.PI * 2);
+                ctx.fillStyle = '#33cc33'; 
                 ctx.fill();
                 ctx.lineWidth = 2;
                 ctx.strokeStyle = '#000';
                 ctx.stroke();
             }
 
-            // 画本体
-            ctx.beginPath();
-            ctx.arc(x, y, 20, 0, Math.PI * 2); // radius 暂定为 20
-            ctx.fillStyle = isMe ? '#FFD700' : '#00BFFF'; // 别人是蓝色本体，自己是金色
-            ctx.fill();
-            ctx.lineWidth = 3;
-            ctx.strokeStyle = '#000';
-            ctx.stroke();
+            // 让浏览器不停地画下一帧
+            requestAnimationFrame(draw);
         }
-
-        function gameLoop() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            // 1. 本地玩家逻辑更新
-            const dx = player.mouseX - player.screenX;
-            const dy = player.mouseY - player.screenY;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-
-            if (dist > 0) {
-                const speedRatio = Math.min(dist / player.maxMouseDist, 1);
-                const currentSpeed = player.maxSpeed * speedRatio;
-                player.worldX += (dx / dist) * currentSpeed;
-                player.worldY += (dy / dist) * currentSpeed;
-            }
-
-            player.rotationAngle += player.rotationSpeed;
-            player.currentDistance += (player.targetDistance - player.currentDistance) * 0.15;
-
-            // 🚀 发送我的最新状态给服务器
-            socket.emit('playerUpdate', {
-                worldX: player.worldX,
-                worldY: player.worldY,
-                currentDistance: player.currentDistance,
-                rotationAngle: player.rotationAngle
-            });
-
-            // 2. 开始渲染世界
-            drawGrid();
-
-            // 🎯 绘制半透明引导箭头
-            if (dist > 10) {
-                ctx.save();
-                const lineLength = Math.min(dist, player.maxMouseDist);
-                const angle = Math.atan2(dy, dx);
-
-                ctx.translate(player.screenX, player.screenY);
-                ctx.rotate(angle);
-
-                const shaftWidth = 6;
-                const headWidth = 20;
-                const actualHeadLength = Math.min(18, lineLength);
-                const shaftLength = lineLength - actualHeadLength;
-
-                ctx.beginPath();
-                ctx.moveTo(0, -shaftWidth / 2);
-                ctx.lineTo(shaftLength, -shaftWidth / 2);
-                ctx.lineTo(shaftLength, -headWidth / 2);
-                ctx.lineTo(lineLength, 0);
-                ctx.lineTo(shaftLength, headWidth / 2);
-                ctx.lineTo(shaftLength, shaftWidth / 2);
-                ctx.lineTo(0, shaftWidth / 2);
-                ctx.closePath();
-
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
-                ctx.fill();
-                ctx.restore();
-            }
-
-            // 3. 渲染所有在线玩家
-            for (let id in otherPlayers) {
-                const p = otherPlayers[id];
-
-                if (id === socket.id) {
-                    // 这是我自己，直接画在屏幕正中央
-                    drawPlayer(player.screenX, player.screenY, player, true);
-                } else {
-                    // 🚀 核心：这是别人！
-                    // 计算别人在我的屏幕上的坐标：屏幕中心 + (别人的世界坐标 - 我的世界坐标)
-                    const drawX = player.screenX + (p.worldX - player.worldX);
-                    const drawY = player.screenY + (p.worldY - player.worldY);
-                    
-                    // 只渲染在屏幕可视范围内的玩家（优化性能）
-                    if (drawX > -100 && drawX < canvas.width + 100 &&
-                        drawY > -100 && drawY < canvas.height + 100) {
-                        drawPlayer(drawX, drawY, p, false);
-                    }
-                }
-            }
-
-            requestAnimationFrame(gameLoop);
-        }
-
-        // 确保连接成功后再启动游戏循环，避免找不到 socket.id
-        socket.on('connect', () => {
-            gameLoop();
-        });
-
-        window.addEventListener('resize', () => {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-            player.screenX = canvas.width / 2;
-            player.screenY = canvas.height / 2;
-        });
+        
+        // 启动渲染循环
+        draw();
     </script>
 </body>
 </html>
