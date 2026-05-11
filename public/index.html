@@ -105,8 +105,8 @@
                 const petalY = y + Math.sin(angle) * pData.currentDistance;
 
                 ctx.beginPath();
-                ctx.arc(petalX, petalY, 10, 0, Math.PI * 2); // petalRadius 暂定为 10
-                ctx.fillStyle = isMe ? '#FF69B4' : '#FF8C00'; // 别人是橙色花瓣，自己是粉色
+                ctx.arc(petalX, petalY, 10, 0, Math.PI * 2); 
+                ctx.fillStyle = isMe ? '#FF69B4' : '#FF8C00'; 
                 ctx.fill();
                 ctx.lineWidth = 2;
                 ctx.strokeStyle = '#000';
@@ -115,8 +115,8 @@
 
             // 画本体
             ctx.beginPath();
-            ctx.arc(x, y, 20, 0, Math.PI * 2); // radius 暂定为 20
-            ctx.fillStyle = isMe ? '#FFD700' : '#00BFFF'; // 别人是蓝色本体，自己是金色
+            ctx.arc(x, y, 20, 0, Math.PI * 2); 
+            ctx.fillStyle = isMe ? '#FFD700' : '#00BFFF'; 
             ctx.fill();
             ctx.lineWidth = 3;
             ctx.strokeStyle = '#000';
@@ -126,12 +126,13 @@
         function gameLoop() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // 1. 本地玩家逻辑更新
+            // 1. 本地玩家物理逻辑更新 (这里保留你的完美逻辑，没有做任何改动！)
             const dx = player.mouseX - player.screenX;
             const dy = player.mouseY - player.screenY;
             const dist = Math.sqrt(dx * dx + dy * dy);
 
             if (dist > 0) {
+                // 距离超过 maxMouseDist 不影响速度，低于则按比例减速
                 const speedRatio = Math.min(dist / player.maxMouseDist, 1);
                 const currentSpeed = player.maxSpeed * speedRatio;
                 player.worldX += (dx / dist) * currentSpeed;
@@ -152,10 +153,12 @@
             // 2. 开始渲染世界
             drawGrid();
 
-            // 🎯 绘制半透明引导箭头
+            // 🎯 绘制半透明引导箭头 (已修改：无视觉长度限制，直达鼠标！)
             if (dist > 10) {
                 ctx.save();
-                const lineLength = Math.min(dist, player.maxMouseDist);
+                
+                // 【核心修改点】：删掉了 Math.min 限制，让画线长度直接等于鼠标距离 dist
+                const lineLength = dist; 
                 const angle = Math.atan2(dy, dx);
 
                 ctx.translate(player.screenX, player.screenY);
@@ -163,14 +166,15 @@
 
                 const shaftWidth = 6;
                 const headWidth = 20;
-                const actualHeadLength = Math.min(18, lineLength);
+                // 箭头头部的长度固定最大为18，防止鼠标离中心太近时箭头画穿
+                const actualHeadLength = Math.min(18, lineLength); 
                 const shaftLength = lineLength - actualHeadLength;
 
                 ctx.beginPath();
                 ctx.moveTo(0, -shaftWidth / 2);
                 ctx.lineTo(shaftLength, -shaftWidth / 2);
                 ctx.lineTo(shaftLength, -headWidth / 2);
-                ctx.lineTo(lineLength, 0);
+                ctx.lineTo(lineLength, 0); // 箭头尖端准确指在鼠标所在位置
                 ctx.lineTo(shaftLength, headWidth / 2);
                 ctx.lineTo(shaftLength, shaftWidth / 2);
                 ctx.lineTo(0, shaftWidth / 2);
