@@ -11,7 +11,6 @@
 <body oncontextmenu="return false;">
     <canvas id="gameCanvas"></canvas>
 
-    <!-- 引入 Socket.io 客户端库 -->
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const canvas = document.getElementById('gameCanvas');
@@ -19,15 +18,14 @@
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
 
-        // 🌟 1. 加载玩家本体图片 🌟
-        const playerImg = new Image();
-        playerImg.src = '/img/player.png'; // 指向你刚才保存的 public/img/player.png
+        // 🌟 1. 一次性加载所有三张图片 🌟
+        const imgNormal = new Image(); imgNormal.src = '/img/player.png';
+        const imgAttack = new Image(); imgAttack.src = '/img/player-attack.png';
+        const imgDefend = new Image(); imgDefend.src = '/img/player-defense.png';
 
-        // 连接到服务器
         const socket = io();
-        let otherPlayers = {}; // 存储服务器发来的其他玩家数据
+        let otherPlayers = {}; 
 
-        // 接收全服游戏状态
         socket.on('gameState', (serverPlayers) => {
             otherPlayers = serverPlayers;
         });
@@ -40,7 +38,6 @@
             worldY: 0,
             
             petalCount: 5,
-            petalRadius: 10,
             normalDistance: 45,
             attackDistance: 90,
             defendDistance: 25,
@@ -48,6 +45,8 @@
             targetDistance: 45,
             rotationAngle: 0,
             rotationSpeed: 0.05,
+            facingAngle: 0,   // 新增：眼睛朝向
+            state: 'normal',  // 新增：当前表情状态
 
             maxSpeed: 6,
             maxMouseDist: 150,
@@ -62,10 +61,18 @@
             player.mouseY = e.clientY;
         });
 
+        // 🌟 2. 根据鼠标左右键切换 targetDistance 和 state(表情) 🌟
         function updateStance() {
-            if (mouseState.left) player.targetDistance = player.attackDistance;
-            else if (mouseState.right) player.targetDistance = player.defendDistance;
-            else player.targetDistance = player.normalDistance;
+            if (mouseState.left) {
+                player.targetDistance = player.attackDistance;
+                player.state = 'attack';
+            } else if (mouseState.right) {
+                player.targetDistance = player.defendDistance;
+                player.state = 'defend';
+            } else {
+                player.targetDistance = player.normalDistance;
+                player.state = 'normal';
+            }
         }
 
         window.addEventListener('mousedown', (e) => {
@@ -80,7 +87,6 @@
             updateStance();
         });
 
-        // 画网格背景
         function drawGrid() {
             ctx.save();
             ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
@@ -100,9 +106,8 @@
             ctx.restore();
         }
 
-        // 绘制任意玩家（复用代码，用来画自己和别人）
         function drawPlayer(x, y, pData, isMe) {
-            // 画花瓣 (这里还是圆圈，等你有了花瓣贴图可以像下面一样改)
+            // 画花瓣
             for (let i = 0; i < pData.petalCount; i++) {
                 const angle = pData.rotationAngle + (i * (Math.PI * 2) / pData.petalCount);
                 const petalX = x + Math.cos(angle) * pData.currentDistance;
@@ -117,30 +122,41 @@
                 ctx.stroke();
             }
 
-            // 🌟 2. 画本体 (替换成了贴图) 🌟
-            // 如果图片加载完成了才画，避免报错
-            if (playerImg.complete) {
-                const imgSize = 40; // 因为你原来的圆半径是20，所以宽高设定为40
-                // drawImage 参数: (图片对象, X坐标, Y坐标, 宽度, 高度)
-                // x - imgSize/2 和 y - imgSize/2 是为了让图片的中心点对准坐标(x, y)
-                ctx.drawImage(playerImg, x - imgSize / 2, y - imgSize / 2, imgSize, imgSize);
+            // 🌟 3. 根据状态选择对应的图片 🌟
+            let currentImg = imgNormal;
+            if (pData.state === 'attack') currentImg = imgAttack;
+            else if (pData.state === 'defend') currentImg = imgDefend;
+
+            // 🌟 4. 让本体图片旋转，面向鼠标方向 🌟
+            const imgSize = 40;
+            ctx.save();
+            ctx.translate(x, y); 
+            
+            // 旋转画布！
+            // 【注意】如果你发现虫子的眼睛往上瞟，把下面改成: ctx.rotate(pData.facingAngle + Math.PI / 2);
+            ctx.rotate(pData.facingAngle); 
+
+            if (currentImg.complete) {
+                ctx.drawImage(currentImg, -imgSize / 2, -imgSize / 2, imgSize, imgSize);
             } else {
-                // 如果图片还没加载完，先画个原来的圆圈占位
                 ctx.beginPath();
-                ctx.arc(x, y, 20, 0, Math.PI * 2); 
-                ctx.fillStyle = isMe ? '#FFD700' : '#00BFFF'; 
+                ctx.arc(0, 0, 20, 0, Math.PI * 2); 
+                ctx.fillStyle = '#FFD700'; 
                 ctx.fill();
-                ctx.stroke();
             }
+            ctx.restore();
         }
 
+        // 🌟 修复卡死：不再等待 socket connect，立刻启动游戏循环 🌟
         function gameLoop() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // 1. 本地玩家物理逻辑更新
             const dx = player.mouseX - player.screenX;
             const dy = player.mouseY - player.screenY;
             const dist = Math.sqrt(dx * dx + dy * dy);
+
+            // 🌟 5. 计算本地玩家视线的朝向角度 🌟
+            player.facingAngle = Math.atan2(dy, dx);
 
             if (dist > 0) {
                 const speedRatio = Math.min(dist / player.maxMouseDist, 1);
@@ -152,36 +168,34 @@
             player.rotationAngle += player.rotationSpeed;
             player.currentDistance += (player.targetDistance - player.currentDistance) * 0.15;
 
-            // 发送我的最新状态给服务器
+            // 发送所有最新状态给服务器 (包括表情和朝向)
             socket.emit('playerUpdate', {
                 worldX: player.worldX,
                 worldY: player.worldY,
                 currentDistance: player.currentDistance,
-                rotationAngle: player.rotationAngle
+                rotationAngle: player.rotationAngle,
+                facingAngle: player.facingAngle,
+                state: player.state
             });
 
-            // 2. 开始渲染世界
             drawGrid();
 
             // 绘制半透明引导箭头
             if (dist > 10) {
                 ctx.save();
-                const lineLength = dist; 
-                const angle = Math.atan2(dy, dx);
-
                 ctx.translate(player.screenX, player.screenY);
-                ctx.rotate(angle);
+                ctx.rotate(player.facingAngle);
 
                 const shaftWidth = 6;
                 const headWidth = 20;
-                const actualHeadLength = Math.min(18, lineLength); 
-                const shaftLength = lineLength - actualHeadLength;
+                const actualHeadLength = Math.min(18, dist); 
+                const shaftLength = dist - actualHeadLength;
 
                 ctx.beginPath();
                 ctx.moveTo(0, -shaftWidth / 2);
                 ctx.lineTo(shaftLength, -shaftWidth / 2);
                 ctx.lineTo(shaftLength, -headWidth / 2);
-                ctx.lineTo(lineLength, 0); 
+                ctx.lineTo(dist, 0); 
                 ctx.lineTo(shaftLength, headWidth / 2);
                 ctx.lineTo(shaftLength, shaftWidth / 2);
                 ctx.lineTo(0, shaftWidth / 2);
@@ -192,10 +206,9 @@
                 ctx.restore();
             }
 
-            // 3. 渲染所有在线玩家
+            // 渲染所有在线玩家
             for (let id in otherPlayers) {
                 const p = otherPlayers[id];
-
                 if (id === socket.id) {
                     drawPlayer(player.screenX, player.screenY, player, true);
                 } else {
@@ -208,13 +221,11 @@
                     }
                 }
             }
-
             requestAnimationFrame(gameLoop);
         }
 
-        socket.on('connect', () => {
-            gameLoop();
-        });
+        // 直接启动游戏，不被网络延迟卡死
+        gameLoop();
 
         window.addEventListener('resize', () => {
             canvas.width = window.innerWidth;
