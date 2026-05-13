@@ -19,6 +19,10 @@
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
 
+        // 🌟 1. 加载玩家本体图片 🌟
+        const playerImg = new Image();
+        playerImg.src = '/img/player.png'; // 指向你刚才保存的 public/img/player.png
+
         // 连接到服务器
         const socket = io();
         let otherPlayers = {}; // 存储服务器发来的其他玩家数据
@@ -98,7 +102,7 @@
 
         // 绘制任意玩家（复用代码，用来画自己和别人）
         function drawPlayer(x, y, pData, isMe) {
-            // 画花瓣
+            // 画花瓣 (这里还是圆圈，等你有了花瓣贴图可以像下面一样改)
             for (let i = 0; i < pData.petalCount; i++) {
                 const angle = pData.rotationAngle + (i * (Math.PI * 2) / pData.petalCount);
                 const petalX = x + Math.cos(angle) * pData.currentDistance;
@@ -113,26 +117,32 @@
                 ctx.stroke();
             }
 
-            // 画本体
-            ctx.beginPath();
-            ctx.arc(x, y, 20, 0, Math.PI * 2); 
-            ctx.fillStyle = isMe ? '#FFD700' : '#00BFFF'; 
-            ctx.fill();
-            ctx.lineWidth = 3;
-            ctx.strokeStyle = '#000';
-            ctx.stroke();
+            // 🌟 2. 画本体 (替换成了贴图) 🌟
+            // 如果图片加载完成了才画，避免报错
+            if (playerImg.complete) {
+                const imgSize = 40; // 因为你原来的圆半径是20，所以宽高设定为40
+                // drawImage 参数: (图片对象, X坐标, Y坐标, 宽度, 高度)
+                // x - imgSize/2 和 y - imgSize/2 是为了让图片的中心点对准坐标(x, y)
+                ctx.drawImage(playerImg, x - imgSize / 2, y - imgSize / 2, imgSize, imgSize);
+            } else {
+                // 如果图片还没加载完，先画个原来的圆圈占位
+                ctx.beginPath();
+                ctx.arc(x, y, 20, 0, Math.PI * 2); 
+                ctx.fillStyle = isMe ? '#FFD700' : '#00BFFF'; 
+                ctx.fill();
+                ctx.stroke();
+            }
         }
 
         function gameLoop() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // 1. 本地玩家物理逻辑更新 (这里保留你的完美逻辑，没有做任何改动！)
+            // 1. 本地玩家物理逻辑更新
             const dx = player.mouseX - player.screenX;
             const dy = player.mouseY - player.screenY;
             const dist = Math.sqrt(dx * dx + dy * dy);
 
             if (dist > 0) {
-                // 距离超过 maxMouseDist 不影响速度，低于则按比例减速
                 const speedRatio = Math.min(dist / player.maxMouseDist, 1);
                 const currentSpeed = player.maxSpeed * speedRatio;
                 player.worldX += (dx / dist) * currentSpeed;
@@ -142,7 +152,7 @@
             player.rotationAngle += player.rotationSpeed;
             player.currentDistance += (player.targetDistance - player.currentDistance) * 0.15;
 
-            // 🚀 发送我的最新状态给服务器
+            // 发送我的最新状态给服务器
             socket.emit('playerUpdate', {
                 worldX: player.worldX,
                 worldY: player.worldY,
@@ -153,11 +163,9 @@
             // 2. 开始渲染世界
             drawGrid();
 
-            // 🎯 绘制半透明引导箭头 (已修改：无视觉长度限制，直达鼠标！)
+            // 绘制半透明引导箭头
             if (dist > 10) {
                 ctx.save();
-                
-                // 【核心修改点】：删掉了 Math.min 限制，让画线长度直接等于鼠标距离 dist
                 const lineLength = dist; 
                 const angle = Math.atan2(dy, dx);
 
@@ -166,7 +174,6 @@
 
                 const shaftWidth = 6;
                 const headWidth = 20;
-                // 箭头头部的长度固定最大为18，防止鼠标离中心太近时箭头画穿
                 const actualHeadLength = Math.min(18, lineLength); 
                 const shaftLength = lineLength - actualHeadLength;
 
@@ -174,7 +181,7 @@
                 ctx.moveTo(0, -shaftWidth / 2);
                 ctx.lineTo(shaftLength, -shaftWidth / 2);
                 ctx.lineTo(shaftLength, -headWidth / 2);
-                ctx.lineTo(lineLength, 0); // 箭头尖端准确指在鼠标所在位置
+                ctx.lineTo(lineLength, 0); 
                 ctx.lineTo(shaftLength, headWidth / 2);
                 ctx.lineTo(shaftLength, shaftWidth / 2);
                 ctx.lineTo(0, shaftWidth / 2);
@@ -190,15 +197,11 @@
                 const p = otherPlayers[id];
 
                 if (id === socket.id) {
-                    // 这是我自己，直接画在屏幕正中央
                     drawPlayer(player.screenX, player.screenY, player, true);
                 } else {
-                    // 🚀 核心：这是别人！
-                    // 计算别人在我的屏幕上的坐标：屏幕中心 + (别人的世界坐标 - 我的世界坐标)
                     const drawX = player.screenX + (p.worldX - player.worldX);
                     const drawY = player.screenY + (p.worldY - player.worldY);
                     
-                    // 只渲染在屏幕可视范围内的玩家（优化性能）
                     if (drawX > -100 && drawX < canvas.width + 100 &&
                         drawY > -100 && drawY < canvas.height + 100) {
                         drawPlayer(drawX, drawY, p, false);
@@ -209,7 +212,6 @@
             requestAnimationFrame(gameLoop);
         }
 
-        // 确保连接成功后再启动游戏循环，避免找不到 socket.id
         socket.on('connect', () => {
             gameLoop();
         });
