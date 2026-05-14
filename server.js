@@ -13,14 +13,15 @@ const players = {};
 io.on('connection', (socket) => {
     console.log(`🌸 玩家加入: ${socket.id}`);
 
-    // 初始化新玩家的默认数据（增加了 state 和 facingAngle）
+    // 初始化新玩家的默认数据（将 state 替换为平滑渐变值）
     players[socket.id] = {
         worldX: 0,
         worldY: 0,
         currentDistance: 45,
         rotationAngle: 0,
         facingAngle: 0,      // 视线朝向角度
-        state: 'normal',     // 默认表情状态
+        attackBlend: 0,      // 新增：攻击渐变值
+        defendBlend: 0,      // 新增：防御渐变值
         petalCount: 5
     };
 
@@ -31,8 +32,11 @@ io.on('connection', (socket) => {
             players[socket.id].worldY = data.worldY;
             players[socket.id].currentDistance = data.currentDistance;
             players[socket.id].rotationAngle = data.rotationAngle;
-            players[socket.id].facingAngle = data.facingAngle; // 更新视线
-            players[socket.id].state = data.state;             // 更新表情
+            
+            // 同步白点朝向和渐变表情
+            players[socket.id].facingAngle = data.facingAngle; 
+            players[socket.id].attackBlend = data.attackBlend; 
+            players[socket.id].defendBlend = data.defendBlend; 
         }
     });
 
@@ -42,6 +46,7 @@ io.on('connection', (socket) => {
     });
 });
 
+// 以 60 FPS 向所有玩家广播最新状态
 setInterval(() => {
     io.emit('gameState', players);
 }, 1000 / 60);
