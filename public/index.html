@@ -5,7 +5,8 @@
     <title>My Florr.io - 多人联机版</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #181818; }
-        canvas { display: block; }
+        /* 使用 CSS 控制画布占满全屏，实际像素由 JS 控制 */
+        canvas { display: block; width: 100vw; height: 100vh; }
     </style>
 </head>
 <body oncontextmenu="return false;">
@@ -15,10 +16,34 @@
     <script>
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
+        
+        // 游戏逻辑屏幕尺寸
+        let logicalWidth = window.innerWidth;
+        let logicalHeight = window.innerHeight;
 
-        // 🌟 1. 一次性加载所有三张图片 🌟
+        // 🌟 1. 高清 Canvas 防锯齿适配 🌟
+        function resizeCanvas() {
+            logicalWidth = window.innerWidth;
+            logicalHeight = window.innerHeight;
+            
+            // 获取设备的像素比 (Retina屏幕通常为2)
+            const dpr = window.devicePixelRatio || 1;
+            
+            // 设置 Canvas 的实际内部像素大小
+            canvas.width = Math.round(logicalWidth * dpr);
+            canvas.height = Math.round(logicalHeight * dpr);
+            
+            // 缩放画布上下文，让后续绘制的坐标都自动适配 dpr
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            
+            // 开启高质量平滑，防止图片缩放发花
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+
+            player.screenX = logicalWidth / 2;
+            player.screenY = logicalHeight / 2;
+        }
+
         const imgNormal = new Image(); imgNormal.src = '/img/player.png';
         const imgAttack = new Image(); imgAttack.src = '/img/player-attack.png';
         const imgDefend = new Image(); imgDefend.src = '/img/player-defense.png';
@@ -32,8 +57,8 @@
 
         // 🌺 我的本地玩家数据
         const player = {
-            screenX: canvas.width / 2,
-            screenY: canvas.height / 2,
+            screenX: 0,
+            screenY: 0,
             worldX: 0,
             worldY: 0,
             
@@ -45,14 +70,24 @@
             targetDistance: 45,
             rotationAngle: 0,
             rotationSpeed: 0.05,
-            facingAngle: 0,   // 新增：眼睛朝向
-            state: 'normal',  // 新增：当前表情状态
+            facingAngle: 0,
+            
+            // 🌟 2. 状态渐变变量 🌟
+            attackBlend: 0,
+            defendBlend: 0,
+            targetAttackBlend: 0,
+            targetDefendBlend: 0,
 
             maxSpeed: 6,
             maxMouseDist: 150,
-            mouseX: canvas.width / 2,
-            mouseY: canvas.height / 2
+            mouseX: 0,
+            mouseY: 0
         };
+
+        // 初始化画布大小
+        resizeCanvas();
+        player.mouseX = player.screenX;
+        player.mouseY = player.screenY;
 
         const mouseState = { left: false, right: false };
 
@@ -61,17 +96,20 @@
             player.mouseY = e.clientY;
         });
 
-        // 🌟 2. 根据鼠标左右键切换 targetDistance 和 state(表情) 🌟
+        // 🌟 3. 切换目标渐变值，而不是瞬间切换图片 🌟
         function updateStance() {
             if (mouseState.left) {
                 player.targetDistance = player.attackDistance;
-                player.state = 'attack';
+                player.targetAttackBlend = 1;
+                player.targetDefendBlend = 0;
             } else if (mouseState.right) {
                 player.targetDistance = player.defendDistance;
-                player.state = 'defend';
+                player.targetAttackBlend = 0;
+                player.targetDefendBlend = 1;
             } else {
                 player.targetDistance = player.normalDistance;
-                player.state = 'normal';
+                player.targetAttackBlend = 0;
+                player.targetDefendBlend = 0;
             }
         }
 
@@ -87,6 +125,8 @@
             updateStance();
         });
 
+        window.addEventListener('resize', resizeCanvas);
+
         function drawGrid() {
             ctx.save();
             ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
@@ -96,22 +136,24 @@
             const offsetY = -player.worldY % gridSize;
 
             ctx.beginPath();
-            for (let x = offsetX - gridSize; x < canvas.width; x += gridSize) {
-                ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height);
+            for (let x = offsetX - gridSize; x < logicalWidth; x += gridSize) {
+                ctx.moveTo(x, 0); ctx.lineTo(x, logicalHeight);
             }
-            for (let y = offsetY - gridSize; y < canvas.height; y += gridSize) {
-                ctx.moveTo(0, y); ctx.lineTo(canvas.width, y);
+            for (let y = offsetY - gridSize; y < logicalHeight; y += gridSize) {
+                ctx.moveTo(0, y); ctx.lineTo(logicalWidth, y);
             }
             ctx.stroke();
             ctx.restore();
         }
 
+        // 🌟 4. 全新的绘制逻辑 🌟
         function drawPlayer(x, y, pData, isMe) {
-            // 画花瓣
+            // -- 画花瓣 --
             for (let i = 0; i < pData.petalCount; i++) {
                 const angle = pData.rotationAngle + (i * (Math.PI * 2) / pData.petalCount);
-                const petalX = x + Math.cos(angle) * pData.currentDistance;
-                const petalY = y + Math.sin(angle) * pData.currentDistance;
+                // 使用 Math.round 避免小数坐标导致边缘锯齿抖动
+                const petalX = Math.round(x + Math.cos(angle) * pData.currentDistance);
+                const petalY = Math.round(y + Math.sin(angle) * pData.currentDistance);
 
                 ctx.beginPath();
                 ctx.arc(petalX, petalY, 10, 0, Math.PI * 2); 
@@ -122,40 +164,69 @@
                 ctx.stroke();
             }
 
-            // 🌟 3. 根据状态选择对应的图片 🌟
-            let currentImg = imgNormal;
-            if (pData.state === 'attack') currentImg = imgAttack;
-            else if (pData.state === 'defend') currentImg = imgDefend;
+            // -- 画身体图片 (不旋转、防抖坐标) --
+            // 假设你的源图片是 96x96，这里绘制大小选 48
+            const imgSize = 48; 
+            const drawX = Math.round(x - imgSize / 2);
+            const drawY = Math.round(y - imgSize / 2);
 
-            // 🌟 4. 让本体图片旋转，面向鼠标方向 🌟
-            const imgSize = 40;
-            ctx.save();
-            ctx.translate(x, y); 
-            
-            // 旋转画布！
-            // 【注意】如果你发现虫子的眼睛往上瞟，把下面改成: ctx.rotate(pData.facingAngle + Math.PI / 2);
-            ctx.rotate(pData.facingAngle); 
-
-            if (currentImg.complete) {
-                ctx.drawImage(currentImg, -imgSize / 2, -imgSize / 2, imgSize, imgSize);
-            } else {
-                ctx.beginPath();
-                ctx.arc(0, 0, 20, 0, Math.PI * 2); 
-                ctx.fillStyle = '#FFD700'; 
-                ctx.fill();
+            function drawBodyImg(img, alpha) {
+                if (!img.complete || alpha <= 0.01) return;
+                ctx.save();
+                ctx.globalAlpha = alpha;
+                ctx.drawImage(img, drawX, drawY, imgSize, imgSize);
+                ctx.restore();
             }
+
+            const aBlend = pData.attackBlend || 0;
+            const dBlend = pData.defendBlend || 0;
+
+            // 渐变叠加，先画正常，再画攻击，再画防御
+            drawBodyImg(imgNormal, 1);
+            drawBodyImg(imgAttack, aBlend);
+            drawBodyImg(imgDefend, dBlend);
+
+            // -- 画眼睛白色高光 (朝向鼠标) --
+            // 下面是高光位置的粗略估算参数，你可以根据你实际 96x96 图片里黑眼睛的位置微调这些值
+            const scale = imgSize / 96; // 绘制尺寸与素材的比率
+            const leftEyeBaseX = -12 * scale; // 左眼相对中心的 X 距离
+            const leftEyeBaseY = -10 * scale; // 左眼相对中心的 Y 距离
+            const rightEyeBaseX = 12 * scale; // 右眼相对中心的 X 距离
+            const rightEyeBaseY = -10 * scale; // 右眼相对中心的 Y 距离
+            
+            // 白点最大移动距离
+            const highlightMove = 5 * scale; 
+            const facingAngle = pData.facingAngle || 0;
+            const offsetX = Math.cos(facingAngle) * highlightMove;
+            const offsetY = Math.sin(facingAngle) * highlightMove;
+            
+            // 高光白点的半径
+            const highlightRadius = 3 * scale;
+
+            ctx.save();
+            ctx.fillStyle = 'white';
+            
+            // 画左眼白点
+            ctx.beginPath();
+            ctx.arc(x + leftEyeBaseX + offsetX, y + leftEyeBaseY + offsetY, highlightRadius, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // 画右眼白点
+            ctx.beginPath();
+            ctx.arc(x + rightEyeBaseX + offsetX, y + rightEyeBaseY + offsetY, highlightRadius, 0, Math.PI * 2);
+            ctx.fill();
+
             ctx.restore();
         }
 
-        // 🌟 修复卡死：不再等待 socket connect，立刻启动游戏循环 🌟
         function gameLoop() {
+            // 清理画布 (注意高清屏下需要清理实际物理像素的大小)
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
             const dx = player.mouseX - player.screenX;
             const dy = player.mouseY - player.screenY;
             const dist = Math.sqrt(dx * dx + dy * dy);
 
-            // 🌟 5. 计算本地玩家视线的朝向角度 🌟
             player.facingAngle = Math.atan2(dy, dx);
 
             if (dist > 0) {
@@ -165,22 +236,26 @@
                 player.worldY += (dy / dist) * currentSpeed;
             }
 
+            // 🌟 5. 在循环中让渐变值和距离一样慢慢过渡 🌟
             player.rotationAngle += player.rotationSpeed;
             player.currentDistance += (player.targetDistance - player.currentDistance) * 0.15;
+            player.attackBlend += (player.targetAttackBlend - player.attackBlend) * 0.15;
+            player.defendBlend += (player.targetDefendBlend - player.defendBlend) * 0.15;
 
-            // 发送所有最新状态给服务器 (包括表情和朝向)
+            // 发送数据给服务器
             socket.emit('playerUpdate', {
                 worldX: player.worldX,
                 worldY: player.worldY,
                 currentDistance: player.currentDistance,
                 rotationAngle: player.rotationAngle,
                 facingAngle: player.facingAngle,
-                state: player.state
+                attackBlend: player.attackBlend, // 添加渐变值同步
+                defendBlend: player.defendBlend
             });
 
             drawGrid();
 
-            // 绘制半透明引导箭头
+            // 绘制引导箭头
             if (dist > 10) {
                 ctx.save();
                 ctx.translate(player.screenX, player.screenY);
@@ -206,7 +281,7 @@
                 ctx.restore();
             }
 
-            // 渲染所有在线玩家
+            // 渲染所有玩家
             for (let id in otherPlayers) {
                 const p = otherPlayers[id];
                 if (id === socket.id) {
@@ -215,8 +290,8 @@
                     const drawX = player.screenX + (p.worldX - player.worldX);
                     const drawY = player.screenY + (p.worldY - player.worldY);
                     
-                    if (drawX > -100 && drawX < canvas.width + 100 &&
-                        drawY > -100 && drawY < canvas.height + 100) {
+                    if (drawX > -100 && drawX < logicalWidth + 100 &&
+                        drawY > -100 && drawY < logicalHeight + 100) {
                         drawPlayer(drawX, drawY, p, false);
                     }
                 }
@@ -224,15 +299,9 @@
             requestAnimationFrame(gameLoop);
         }
 
-        // 直接启动游戏，不被网络延迟卡死
+        // 启动游戏
         gameLoop();
 
-        window.addEventListener('resize', () => {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-            player.screenX = canvas.width / 2;
-            player.screenY = canvas.height / 2;
-        });
     </script>
 </body>
 </html>
