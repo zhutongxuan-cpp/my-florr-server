@@ -45,14 +45,29 @@
             player.screenY = logicalHeight / 2;
         }
 
+        // ================= 图片加载区 =================
+        
+        // 1. 镂空身体图（眼眶是透明的，盖在最上面）
         const imgNormal = new Image();
-        imgNormal.src = '/img/player.png';
+        imgNormal.src = '/img/player-default.png';
 
         const imgAttack = new Image();
         imgAttack.src = '/img/player-attack.png';
 
         const imgDefend = new Image();
         imgDefend.src = '/img/player-defense.png';
+
+        // 2. 黑色眼底图（眼眶区域是黑的，垫在最底下）
+        const imgNormalEye = new Image();
+        imgNormalEye.src = '/img/player-default-eye.png';
+
+        const imgAttackEye = new Image();
+        imgAttackEye.src = '/img/player-attack-eye.png';
+
+        const imgDefendEye = new Image();
+        imgDefendEye.src = '/img/player-defense-eye.png';
+
+        // ==============================================
 
         const socket = io();
         let otherPlayers = {};
@@ -152,6 +167,7 @@
         }
 
         function drawPlayer(x, y, pData, isMe) {
+            // 画花瓣
             for (let i = 0; i < pData.petalCount; i++) {
                 const angle = pData.rotationAngle + (i * (Math.PI * 2) / pData.petalCount);
                 const petalX = Math.round(x + Math.cos(angle) * pData.currentDistance);
@@ -181,23 +197,24 @@
             const aBlend = pData.attackBlend || 0;
             const dBlend = pData.defendBlend || 0;
 
-            drawBodyImg(imgNormal, 1);
-            drawBodyImg(imgAttack, aBlend);
-            drawBodyImg(imgDefend, dBlend);
+            // ================== 开始分层渲染角色 ==================
 
+            // 【第一层】画底层黑底眼眶
+            drawBodyImg(imgNormalEye, 1);
+            drawBodyImg(imgAttackEye, aBlend);
+            drawBodyImg(imgDefendEye, dBlend);
+
+            // 【第二层】画白色动态眼球
             const scale = imgSize / 96;
 
-            // 眼球整体稍微往下移一点
             const leftEyeBaseX = -12 * scale;
             const leftEyeBaseY = -8 * scale;
             const rightEyeBaseX = 12 * scale;
             const rightEyeBaseY = -8 * scale;
 
-            // 基础移动量
             const highlightMove = 6 * scale;
-
             const facingAngle = pData.facingAngle || 0;
-
+            
             const eyeOffsetXScale = 0.65;
             const eyeOffsetYScale = 1.35;
 
@@ -228,8 +245,14 @@
                 Math.PI * 2
             );
             ctx.fill();
-
             ctx.restore();
+
+            // 【第三层】画顶层镂空身体（挡住超出的眼球）
+            drawBodyImg(imgNormal, 1);
+            drawBodyImg(imgAttack, aBlend);
+            drawBodyImg(imgDefend, dBlend);
+
+            // ======================================================
         }
 
         function gameLoop() {
@@ -265,6 +288,7 @@
 
             drawGrid();
 
+            // 画鼠标指示线
             if (dist > 10) {
                 ctx.save();
                 ctx.translate(player.screenX, player.screenY);
@@ -290,6 +314,7 @@
                 ctx.restore();
             }
 
+            // 画其他玩家和自己
             for (let id in otherPlayers) {
                 const p = otherPlayers[id];
 
