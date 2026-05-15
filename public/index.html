@@ -198,9 +198,11 @@
 
             const facingAngle = pData.facingAngle || 0;
 
-            // 左右压扁一点，上下拉长一点
-            const offsetX = Math.cos(facingAngle) * highlightMove * 0.75;
-            const offsetY = Math.sin(facingAngle) * highlightMove * 1.2;
+            const eyeOffsetXScale = 0.65;
+            const eyeOffsetYScale = 1.35;
+
+            const offsetX = Math.cos(facingAngle) * highlightMove * eyeOffsetXScale;
+            const offsetY = Math.sin(facingAngle) * highlightMove * eyeOffsetYScale;
 
             const highlightRadius = 5 * scale;
 
