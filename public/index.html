@@ -187,19 +187,21 @@
 
             const scale = imgSize / 96;
 
+            // 眼球整体稍微往下移一点
             const leftEyeBaseX = -12 * scale;
-            const leftEyeBaseY = -10 * scale;
+            const leftEyeBaseY = -8 * scale;
             const rightEyeBaseX = 12 * scale;
-            const rightEyeBaseY = -10 * scale;
+            const rightEyeBaseY = -8 * scale;
 
-            // 白点移动距离，稍微加大一点
+            // 基础移动量
             const highlightMove = 6 * scale;
 
             const facingAngle = pData.facingAngle || 0;
-            const offsetX = Math.cos(facingAngle) * highlightMove;
-            const offsetY = Math.sin(facingAngle) * highlightMove;
 
-            // 白点半径：从 3 改大到 5
+            // 左右压扁一点，上下拉长一点
+            const offsetX = Math.cos(facingAngle) * highlightMove * 0.75;
+            const offsetY = Math.sin(facingAngle) * highlightMove * 1.2;
+
             const highlightRadius = 5 * scale;
 
             ctx.save();
