@@ -339,11 +339,11 @@
         const ctx = canvas.getContext('2d');
 
         const authPanel = document.getElementById('authPanel');
-        const usernameInput = document.getElementById('usernameInput');
-        const passwordInput = document.getElementById('passwordInput');
-        const loginBtn = document.getElementById('loginBtn');
-        const registerBtn = document.getElementById('registerBtn');
-        const authMessage = document.getElementById('authMessage');
+        let usernameInput = document.getElementById('usernameInput');
+        let passwordInput = document.getElementById('passwordInput');
+        let loginBtn = document.getElementById('loginBtn');
+        let registerBtn = document.getElementById('registerBtn');
+        let authMessage = document.getElementById('authMessage');
         const topBar = document.getElementById('topBar');
         const welcomeText = document.getElementById('welcomeText');
         const logoutBtn = document.getElementById('logoutBtn');
@@ -351,6 +351,7 @@
         const connectionStatus = document.getElementById('connectionStatus');
         const connectionStatusCard = document.getElementById('connectionStatusCard');
         const wasmStatus = document.getElementById('wasmStatus');
+        const authBox = authPanel.querySelector('.auth-box');
 
         let socket = null;
         let loggedIn = false;
@@ -360,12 +361,50 @@
         let hadConnectedBefore = false;
         let reconnecting = false;
 
+        function repairAuthPanelMarkup() {
+            if (!authBox) return;
+            authBox.innerHTML = `
+                <h1 class="auth-title">My Florr.io</h1>
+                <p class="auth-subtitle">登录或注册后进入花瓣世界</p>
+                <label for="usernameInput">用户名</label>
+                <input id="usernameInput" type="text" maxlength="15" placeholder="请输入用户名">
+                <div class="auth-hint">3-15位，只能包含中文、字母、数字、下划线</div>
+                <label for="passwordInput">密码</label>
+                <input id="passwordInput" type="password" maxlength="15" placeholder="请输入密码">
+                <div class="auth-hint">5-15位，必须同时包含字母和数字</div>
+                <div class="auth-actions">
+                    <button id="loginBtn">登录</button>
+                    <button id="registerBtn">注册</button>
+                </div>
+                <div id="authMessage"></div>
+            `;
+        }
+
         let logicalWidth = window.innerWidth;
         let logicalHeight = window.innerHeight;
 
         function setAuthMessage(msg, color = '#fcd34d') {
             authMessage.textContent = msg;
             authMessage.style.color = color;
+        }
+
+        function bindAuthControls() {
+            usernameInput = document.getElementById('usernameInput');
+            passwordInput = document.getElementById('passwordInput');
+            loginBtn = document.getElementById('loginBtn');
+            registerBtn = document.getElementById('registerBtn');
+            authMessage = document.getElementById('authMessage');
+
+            loginBtn.addEventListener('click', handleLogin);
+            registerBtn.addEventListener('click', handleRegister);
+
+            usernameInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') handleLogin();
+            });
+
+            passwordInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') handleLogin();
+            });
         }
 
         function setConnectionStatus(text, type) {
@@ -774,7 +813,25 @@
             hoverButton: false,
             buttonRect: { x: 0, y: 0, width: 0, height: 0 },
             closeRect: { x: 0, y: 0, width: 0, height: 0 },
-            panelRect: { x: 0, y: 0, width: 0, height: 0 }
+            panelRect: { x: 0, y: 0, width: 0, height: 0 },
+            cardRects: []
+        };
+
+        const loadoutState = {
+            slotRects: Array.from({ length: 5 }, () => ({ x: 0, y: 0, width: 0, height: 0 })),
+            slots: Array(5).fill(null)
+        };
+
+        const dragState = {
+            active: false,
+            source: null,
+            item: null,
+            count: 0,
+            pointerX: 0,
+            pointerY: 0,
+            angle: 0,
+            angleDir: 1,
+            hoverSlotIndex: -1
         };
 
         const PETAL_NAME_BY_ID = {
@@ -829,6 +886,15 @@
                 36,
                 36
             );
+
+            const slotSize = 92;
+            const slotGap = 18;
+            const totalWidth = slotSize * loadoutState.slotRects.length + slotGap * (loadoutState.slotRects.length - 1);
+            const startX = Math.round((logicalWidth - totalWidth) / 2);
+            const slotY = logicalHeight - slotSize - 26;
+            loadoutState.slotRects.forEach((rect, index) => {
+                setRect(rect, startX + index * (slotSize + slotGap), slotY, slotSize, slotSize);
+            });
         }
 
         function getPetalName(petalId) {
@@ -867,6 +933,105 @@
                 }
                 return a.name.localeCompare(b.name, 'en', { sensitivity: 'base' });
             });
+        }
+
+        function clonePetalItem(item) {
+            return {
+                petalId: Number(item?.petalId ?? item?.id ?? 1) || 1,
+                rarity: Number(item?.rarity ?? 0) || 0,
+                name: String(item?.name || getPetalName(item?.petalId ?? item?.id ?? 1))
+            };
+        }
+
+        function removeOneInventoryItem(petalId, rarity) {
+            const index = player.inventory.findIndex(item =>
+                Number(item?.petalId ?? item?.id ?? 1) === petalId &&
+                Number(item?.rarity ?? 0) === rarity
+            );
+            if (index === -1) return null;
+            const [removed] = player.inventory.splice(index, 1);
+            return clonePetalItem(removed);
+        }
+
+        function addInventoryItem(item) {
+            player.inventory.push(clonePetalItem(item));
+        }
+
+        function getInventoryEntryAtPoint(x, y) {
+            for (let i = inventoryState.cardRects.length - 1; i >= 0; i--) {
+                const rect = inventoryState.cardRects[i];
+                if (pointInRect(x, y, rect)) {
+                    return rect.entry;
+                }
+            }
+            return null;
+        }
+
+        function getSlotIndexAtPoint(x, y) {
+            for (let i = 0; i < loadoutState.slotRects.length; i++) {
+                if (pointInRect(x, y, loadoutState.slotRects[i])) {
+                    return i;
+                }
+            }
+            return -1;
+        }
+
+        function startDraggingFromInventory(entry, x, y) {
+            const item = removeOneInventoryItem(entry.petalId, entry.rarity);
+            if (!item) return false;
+
+            dragState.active = true;
+            dragState.source = 'inventory';
+            dragState.item = item;
+            dragState.count = entry.count;
+            dragState.pointerX = x;
+            dragState.pointerY = y;
+            dragState.angle = 0;
+            dragState.angleDir = 1;
+            dragState.hoverSlotIndex = -1;
+            return true;
+        }
+
+        function startDraggingFromSlot(slotIndex, x, y) {
+            const item = loadoutState.slots[slotIndex];
+            if (!item) return false;
+
+            loadoutState.slots[slotIndex] = null;
+            dragState.active = true;
+            dragState.source = `slot:${slotIndex}`;
+            dragState.item = clonePetalItem(item);
+            dragState.count = 1;
+            dragState.pointerX = x;
+            dragState.pointerY = y;
+            dragState.angle = 0;
+            dragState.angleDir = 1;
+            dragState.hoverSlotIndex = -1;
+            return true;
+        }
+
+        function stopDraggingToInventory() {
+            if (dragState.item) {
+                addInventoryItem(dragState.item);
+            }
+            dragState.active = false;
+            dragState.source = null;
+            dragState.item = null;
+            dragState.count = 0;
+            dragState.hoverSlotIndex = -1;
+        }
+
+        function stopDraggingToSlot(slotIndex) {
+            if (!dragState.item) return;
+
+            if (loadoutState.slots[slotIndex]) {
+                addInventoryItem(loadoutState.slots[slotIndex]);
+            }
+            loadoutState.slots[slotIndex] = clonePetalItem(dragState.item);
+            dragState.active = false;
+            dragState.source = null;
+            dragState.item = null;
+            dragState.count = 0;
+            dragState.hoverSlotIndex = -1;
         }
 
         resizeCanvas();
