@@ -85,7 +85,7 @@
             petalCount: 5,
             normalDistance: 45,
             attackDistance: 90,
-            defendDistance: 25,
+            defendDistance: 36, // 防御时别贴进身体
             currentDistance: 45,
             targetDistance: 45,
             rotationAngle: 0,
@@ -199,25 +199,25 @@
 
             // ================== 开始分层渲染角色 ==================
 
-            // 【第一层】画底层黑底眼眶
+            // 【第一层】底层黑色眼眶
             drawBodyImg(imgNormalEye, 1);
             drawBodyImg(imgAttackEye, aBlend);
             drawBodyImg(imgDefendEye, dBlend);
 
-            // 【第二层】画白色动态眼球
+            // 【第二层】白色动态眼球
             const scale = imgSize / 96;
 
-            // 整体往左一点、往下微调一点
-            const leftEyeBaseX = -13 * scale;
+            // 删除整体向左偏移，改回左右对称；保留略微向下
+            const leftEyeBaseX = -12 * scale;
             const leftEyeBaseY = -7.5 * scale;
-            const rightEyeBaseX = 11 * scale;
+            const rightEyeBaseX = 12 * scale;
             const rightEyeBaseY = -7.5 * scale;
 
             const highlightMove = 6 * scale;
             const facingAngle = pData.facingAngle || 0;
             
             const eyeOffsetXScale = 0.65;
-            const eyeOffsetYScale = 1.15; // 上下移动幅度再减小一点
+            const eyeOffsetYScale = 1.15;
 
             const offsetX = Math.cos(facingAngle) * highlightMove * eyeOffsetXScale;
             const offsetY = Math.sin(facingAngle) * highlightMove * eyeOffsetYScale;
@@ -246,9 +246,10 @@
                 Math.PI * 2
             );
             ctx.fill();
+
             ctx.restore();
 
-            // 【第三层】画顶层镂空身体（挡住超出的眼球）
+            // 【第三层】顶层镂空身体（裁掉超出眼眶的眼球）
             drawBodyImg(imgNormal, 1);
             drawBodyImg(imgAttack, aBlend);
             drawBodyImg(imgDefend, dBlend);
