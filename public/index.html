@@ -396,6 +396,13 @@
             player.defendBlend = 0;
             player.targetAttackBlend = 0;
             player.targetDefendBlend = 0;
+            player.inventory = Array.from({ length: 5 }, () => ({
+                petalId: 1,
+                rarity: 0,
+                name: 'Basic'
+            }));
+            inventoryState.open = false;
+            inventoryState.hoverButton = false;
             mouseState.left = false;
             mouseState.right = false;
             otherPlayers = {};
@@ -705,6 +712,7 @@
 
             player.screenX = logicalWidth / 2;
             player.screenY = logicalHeight / 2;
+            updateInventoryLayout();
         }
 
         const imgNormal = new Image();
@@ -724,6 +732,9 @@
 
         const imgDefendEye = new Image();
         imgDefendEye.src = '/img/player-defense-eye.png';
+
+        const imgInventory = new Image();
+        imgInventory.src = '/img/Inventory.png';
 
         const player = {
             username: '',
@@ -750,8 +761,113 @@
             maxSpeed: 6,
             maxMouseDist: 150,
             mouseX: 0,
-            mouseY: 0
+            mouseY: 0,
+            inventory: Array.from({ length: 5 }, () => ({
+                petalId: 1,
+                rarity: 0,
+                name: 'Basic'
+            }))
         };
+
+        const inventoryState = {
+            open: false,
+            hoverButton: false,
+            buttonRect: { x: 0, y: 0, width: 0, height: 0 },
+            closeRect: { x: 0, y: 0, width: 0, height: 0 },
+            panelRect: { x: 0, y: 0, width: 0, height: 0 }
+        };
+
+        const PETAL_NAME_BY_ID = {
+            1: 'Basic'
+        };
+
+        const RARITY_NAME_BY_LEVEL = {
+            0: 'Common',
+            1: 'Uncommon',
+            2: 'Rare',
+            3: 'Epic',
+            4: 'Legendary',
+            5: 'Mythic'
+        };
+
+        function setRect(rect, x, y, width, height) {
+            rect.x = x;
+            rect.y = y;
+            rect.width = width;
+            rect.height = height;
+        }
+
+        function pointInRect(x, y, rect) {
+            return (
+                x >= rect.x &&
+                x <= rect.x + rect.width &&
+                y >= rect.y &&
+                y <= rect.y + rect.height
+            );
+        }
+
+        function updateInventoryLayout() {
+            const buttonSize = 84;
+            const buttonMargin = 22;
+            setRect(
+                inventoryState.buttonRect,
+                buttonMargin,
+                logicalHeight - buttonSize - buttonMargin,
+                buttonSize,
+                buttonSize
+            );
+
+            const panelWidth = Math.min(980, logicalWidth - 72);
+            const panelHeight = Math.min(680, logicalHeight - 72);
+            const panelX = Math.round((logicalWidth - panelWidth) / 2);
+            const panelY = Math.round((logicalHeight - panelHeight) / 2);
+            setRect(inventoryState.panelRect, panelX, panelY, panelWidth, panelHeight);
+            setRect(
+                inventoryState.closeRect,
+                panelX + panelWidth - 54,
+                panelY + 18,
+                36,
+                36
+            );
+        }
+
+        function getPetalName(petalId) {
+            return PETAL_NAME_BY_ID[petalId] || `Petal ${petalId}`;
+        }
+
+        function getRarityName(rarity) {
+            return RARITY_NAME_BY_LEVEL[rarity] || `R${rarity}`;
+        }
+
+        function getSortedInventoryEntries() {
+            const grouped = new Map();
+
+            for (const petal of player.inventory) {
+                const petalId = Number(petal?.petalId ?? petal?.id ?? 1) || 1;
+                const rarity = Number(petal?.rarity ?? 0) || 0;
+                const name = String(petal?.name || getPetalName(petalId));
+                const key = `${petalId}:${rarity}`;
+                const existing = grouped.get(key);
+
+                if (existing) {
+                    existing.count += 1;
+                } else {
+                    grouped.set(key, {
+                        petalId,
+                        rarity,
+                        name,
+                        count: 1
+                    });
+                }
+            }
+
+            return Array.from(grouped.values()).sort((a, b) => {
+                if (a.rarity !== b.rarity) {
+                    return a.rarity - b.rarity;
+                }
+                return a.name.localeCompare(b.name, 'en', { sensitivity: 'base' });
+            });
+        }
 
         resizeCanvas();
         player.mouseX = player.screenX;
@@ -762,6 +878,10 @@
         window.addEventListener('mousemove', (e) => {
             player.mouseX = e.clientX;
             player.mouseY = e.clientY;
+            inventoryState.hoverButton =
+                loggedIn &&
+                !inventoryState.open &&
+                pointInRect(e.clientX, e.clientY, inventoryState.buttonRect);
         });
 
         function updateStance() {
@@ -782,6 +902,26 @@
 
         window.addEventListener('mousedown', (e) => {
             if (!loggedIn) return;
+            if (inventoryState.open) {
+                if (pointInRect(e.clientX, e.clientY, inventoryState.closeRect)) {
+                    inventoryState.open = false;
+                    return;
+                }
+
+                if (!pointInRect(e.clientX, e.clientY, inventoryState.panelRect)) {
+                    inventoryState.open = false;
+                    return;
+                }
+            }
+
+            if (pointInRect(e.clientX, e.clientY, inventoryState.buttonRect)) {
+                inventoryState.open = !inventoryState.open;
+                inventoryState.hoverButton =
+                    !inventoryState.open &&
+                    pointInRect(e.clientX, e.clientY, inventoryState.buttonRect);
+                return;
+            }
+
             if (e.button === 0) mouseState.left = true;
             if (e.button === 2) mouseState.right = true;
             updateStance();
@@ -832,6 +972,150 @@
             const textY = y + 40;
             ctx.strokeText(username, x, textY);
             ctx.fillText(username, x, textY);
+            ctx.restore();
+        }
+
+        function drawInventoryButton() {
+            const rect = inventoryState.buttonRect;
+            const hovered = inventoryState.hoverButton;
+
+            ctx.save();
+            ctx.translate(rect.x, rect.y);
+
+            ctx.fillStyle = hovered ? 'rgba(255,255,255,0.18)' : 'rgba(12,18,29,0.54)';
+            ctx.strokeStyle = hovered ? 'rgba(255,255,255,0.42)' : 'rgba(255,255,255,0.18)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.roundRect(0, 0, rect.width, rect.height, 16);
+            ctx.fill();
+            ctx.stroke();
+
+            if (imgInventory.complete) {
+                const pad = hovered ? 8 : 10;
+                ctx.drawImage(
+                    imgInventory,
+                    pad,
+                    pad,
+                    rect.width - pad * 2,
+                    rect.height - pad * 2
+                );
+            }
+
+            if (hovered) {
+                ctx.fillStyle = 'rgba(255,255,255,0.10)';
+                ctx.beginPath();
+                ctx.roundRect(4, 4, rect.width - 8, rect.height - 8, 14);
+                ctx.fill();
+            }
+
+            ctx.restore();
+        }
+
+        function drawInventoryCard(x, y, size, entry) {
+            ctx.save();
+            ctx.translate(x, y);
+
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+            ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.roundRect(0, 0, size, size + 46, 14);
+            ctx.fill();
+            ctx.stroke();
+
+            const spriteSize = Math.round(size * 0.78);
+            const spriteX = Math.round((size - spriteSize) / 2);
+            const spriteY = 12;
+            drawWasmPetal(
+                ctx,
+                spriteX + spriteSize / 2,
+                spriteY + spriteSize / 2,
+                [96, entry.petalId, entry.rarity, 1],
+                spriteSize,
+                false
+            );
+
+            ctx.fillStyle = '#f8fafc';
+            ctx.font = 'bold 15px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'alphabetic';
+            ctx.fillText(entry.name, size / 2, size + 18, size - 14);
+
+            ctx.fillStyle = '#cbd5e1';
+            ctx.font = '12px Arial';
+            ctx.fillText(getRarityName(entry.rarity), size / 2, size + 36, size - 14);
+
+            if (entry.count > 1) {
+                ctx.save();
+                ctx.translate(size - 22, 22);
+                ctx.rotate(Math.PI / 4);
+                ctx.fillStyle = 'rgba(15, 23, 42, 0.96)';
+                ctx.fillRect(-30, -10, 60, 20);
+                ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+                ctx.strokeRect(-30, -10, 60, 20);
+                ctx.fillStyle = '#fef08a';
+                ctx.font = 'bold 14px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(`X${entry.count}`, 0, 1);
+                ctx.restore();
+            }
+
+            ctx.restore();
+        }
+
+        function drawInventoryPanel() {
+            if (!inventoryState.open) return;
+
+            const panel = inventoryState.panelRect;
+            const close = inventoryState.closeRect;
+            const entries = getSortedInventoryEntries();
+            const columns = Math.max(3, Math.floor((panel.width - 64) / 152));
+            const cardWidth = Math.min(132, Math.floor((panel.width - 64 - (columns - 1) * 18) / columns));
+            const cardHeight = cardWidth + 46;
+            const startX = panel.x + 24;
+            const startY = panel.y + 84;
+
+            ctx.save();
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+            ctx.fillRect(0, 0, logicalWidth, logicalHeight);
+
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.96)';
+            ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.roundRect(panel.x, panel.y, panel.width, panel.height, 22);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = '#f8fafc';
+            ctx.font = 'bold 28px Arial';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'top';
+            ctx.fillText('Inventory', panel.x + 24, panel.y + 22);
+
+            ctx.fillStyle = '#cbd5e1';
+            ctx.font = '14px Arial';
+            ctx.fillText(`Petals ${player.inventory.length}`, panel.x + 24, panel.y + 54);
+
+            ctx.fillStyle = 'rgba(255,255,255,0.08)';
+            ctx.beginPath();
+            ctx.roundRect(close.x, close.y, close.width, close.height, 10);
+            ctx.fill();
+            ctx.fillStyle = '#f8fafc';
+            ctx.font = 'bold 22px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('×', close.x + close.width / 2, close.y + close.height / 2 + 1);
+
+            entries.forEach((entry, index) => {
+                const column = index % columns;
+                const row = Math.floor(index / columns);
+                const cardX = startX + column * (cardWidth + 18);
+                const cardY = startY + row * (cardHeight + 18);
+                drawInventoryCard(cardX, cardY, cardWidth, entry);
+            });
+
             ctx.restore();
         }
 
@@ -1320,6 +1604,9 @@
                         }
                     }
                 }
+
+                drawInventoryButton();
+                drawInventoryPanel();
             } else {
                 ctx.save();
                 ctx.fillStyle = 'rgba(0,0,0,0.15)';
