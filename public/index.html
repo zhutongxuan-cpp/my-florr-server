@@ -4,10 +4,38 @@
     <meta charset="UTF-8">
     <title>My Florr.io - 多人联机版</title>
     <style>
+        :root {
+            --bg1: #111827;
+            --bg2: #1f2937;
+            --panel: rgba(20, 24, 35, 0.88);
+            --panel-border: rgba(255, 255, 255, 0.08);
+            --text: #f3f4f6;
+            --subtext: #cbd5e1;
+            --green: #22c55e;
+            --green-hover: #16a34a;
+            --blue: #3b82f6;
+            --blue-hover: #2563eb;
+            --red: #ef4444;
+            --red-hover: #dc2626;
+            --yellow: #f59e0b;
+            --gray: #6b7280;
+            --input-bg: rgba(255, 255, 255, 0.08);
+            --shadow: 0 18px 60px rgba(0, 0, 0, 0.35);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
         body {
             margin: 0;
             overflow: hidden;
-            background-color: #181818;
+            background:
+                radial-gradient(circle at top left, #243b55 0%, transparent 35%),
+                radial-gradient(circle at top right, #1d4ed8 0%, transparent 28%),
+                linear-gradient(135deg, var(--bg1), var(--bg2));
+            font-family: "Segoe UI", Arial, sans-serif;
+            color: var(--text);
         }
 
         canvas {
@@ -15,9 +43,278 @@
             width: 100vw;
             height: 100vh;
         }
+
+        #authPanel {
+            position: fixed;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(5, 8, 15, 0.45);
+            backdrop-filter: blur(8px);
+            z-index: 20;
+        }
+
+        .auth-box {
+            width: 380px;
+            padding: 28px;
+            border-radius: 22px;
+            background: var(--panel);
+            border: 1px solid var(--panel-border);
+            box-shadow: var(--shadow);
+        }
+
+        .auth-title {
+            margin: 0 0 10px;
+            text-align: center;
+            font-size: 30px;
+            font-weight: 800;
+            letter-spacing: 0.5px;
+        }
+
+        .auth-subtitle {
+            margin: 0 0 22px;
+            text-align: center;
+            color: var(--subtext);
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .auth-box label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 14px;
+            color: #dbeafe;
+        }
+
+        .auth-box input {
+            width: 100%;
+            margin-bottom: 14px;
+            padding: 13px 14px;
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.08);
+            background: var(--input-bg);
+            color: white;
+            outline: none;
+            font-size: 15px;
+            transition: 0.2s;
+        }
+
+        .auth-box input:focus {
+            border-color: rgba(96, 165, 250, 0.9);
+            box-shadow: 0 0 0 3px rgba(59,130,246,0.18);
+        }
+
+        .auth-hint {
+            margin-top: -4px;
+            margin-bottom: 14px;
+            color: #93c5fd;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .auth-actions {
+            display: flex;
+            gap: 12px;
+            margin-top: 8px;
+        }
+
+        .auth-box button {
+            flex: 1;
+            padding: 12px 14px;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            font-size: 15px;
+            font-weight: 700;
+            color: white;
+            transition: transform 0.15s, opacity 0.15s, background 0.2s;
+        }
+
+        .auth-box button:hover {
+            transform: translateY(-1px);
+        }
+
+        .auth-box button:active {
+            transform: translateY(0);
+        }
+
+        .auth-box button:disabled {
+            opacity: 0.65;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        #loginBtn {
+            background: var(--green);
+        }
+
+        #loginBtn:hover {
+            background: var(--green-hover);
+        }
+
+        #registerBtn {
+            background: var(--blue);
+        }
+
+        #registerBtn:hover {
+            background: var(--blue-hover);
+        }
+
+        #authMessage {
+            min-height: 24px;
+            margin-top: 16px;
+            text-align: center;
+            font-size: 14px;
+            font-weight: 600;
+            color: #fcd34d;
+        }
+
+        #topBar {
+            position: fixed;
+            top: 16px;
+            left: 16px;
+            right: 16px;
+            display: none;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        .top-left {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            pointer-events: auto;
+        }
+
+        .top-card {
+            pointer-events: auto;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 14px;
+            border-radius: 14px;
+            background: rgba(17, 24, 39, 0.72);
+            border: 1px solid rgba(255,255,255,0.08);
+            backdrop-filter: blur(8px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+        }
+
+        #welcomeText {
+            font-size: 14px;
+            color: #e5e7eb;
+        }
+
+        #connectionStatus {
+            font-size: 13px;
+            font-weight: 700;
+            color: white;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--gray);
+            box-shadow: 0 0 12px rgba(255,255,255,0.2);
+            flex-shrink: 0;
+        }
+
+        .status-connected .status-dot {
+            background: var(--green);
+            box-shadow: 0 0 12px rgba(34, 197, 94, 0.7);
+        }
+
+        .status-connecting .status-dot {
+            background: var(--yellow);
+            box-shadow: 0 0 12px rgba(245, 158, 11, 0.7);
+        }
+
+        .status-disconnected .status-dot {
+            background: var(--red);
+            box-shadow: 0 0 12px rgba(239, 68, 68, 0.7);
+        }
+
+        .status-reconnected .status-dot {
+            background: #22d3ee;
+            box-shadow: 0 0 12px rgba(34, 211, 238, 0.7);
+        }
+
+        #logoutBtn {
+            pointer-events: auto;
+            padding: 10px 16px;
+            border: none;
+            border-radius: 12px;
+            background: var(--red);
+            color: white;
+            font-weight: 700;
+            cursor: pointer;
+            transition: 0.2s;
+            box-shadow: 0 8px 18px rgba(0,0,0,0.18);
+        }
+
+        #logoutBtn:hover {
+            background: var(--red-hover);
+            transform: translateY(-1px);
+        }
+
+        #loadingMask {
+            position: fixed;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(10, 14, 24, 0.55);
+            color: white;
+            font-size: 18px;
+            font-weight: 700;
+            z-index: 30;
+        }
     </style>
 </head>
 <body oncontextmenu="return false;">
+    <div id="loadingMask">正在检查登录状态...</div>
+
+    <div id="topBar">
+        <div class="top-left">
+            <div class="top-card">
+                <span id="welcomeText">未登录</span>
+            </div>
+            <div class="top-card status-disconnected" id="connectionStatusCard">
+                <span class="status-dot"></span>
+                <span id="connectionStatus">已断开</span>
+            </div>
+        </div>
+        <button id="logoutBtn">退出登录</button>
+    </div>
+
+    <div id="authPanel">
+        <div class="auth-box">
+            <h1 class="auth-title">My Florr.io</h1>
+            <p class="auth-subtitle">
+                登录或注册后进入花瓣世界
+            </p>
+
+            <label for="usernameInput">用户名</label>
+            <input id="usernameInput" type="text" maxlength="15" placeholder="请输入用户名">
+            <div class="auth-hint">3-15位，只能包含中文、字母、数字、下划线</div>
+
+            <label for="passwordInput">密码</label>
+            <input id="passwordInput" type="password" maxlength="15" placeholder="请输入密码">
+            <div class="auth-hint">5-15位，必须同时包含字母和数字</div>
+
+            <div class="auth-actions">
+                <button id="loginBtn">登录</button>
+                <button id="registerBtn">注册</button>
+            </div>
+
+            <div id="authMessage"></div>
+        </div>
+    </div>
+
     <canvas id="gameCanvas"></canvas>
 
     <script src="/socket.io/socket.io.js"></script>
@@ -25,8 +322,356 @@
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
 
+        const authPanel = document.getElementById('authPanel');
+        const usernameInput = document.getElementById('usernameInput');
+        const passwordInput = document.getElementById('passwordInput');
+        const loginBtn = document.getElementById('loginBtn');
+        const registerBtn = document.getElementById('registerBtn');
+        const authMessage = document.getElementById('authMessage');
+        const topBar = document.getElementById('topBar');
+        const welcomeText = document.getElementById('welcomeText');
+        const logoutBtn = document.getElementById('logoutBtn');
+        const loadingMask = document.getElementById('loadingMask');
+        const connectionStatus = document.getElementById('connectionStatus');
+        const connectionStatusCard = document.getElementById('connectionStatusCard');
+
+        let socket = null;
+        let loggedIn = false;
+        let currentUsername = '';
+        let otherPlayers = {};
+        let remoteLogoutHandled = false;
+        let hadConnectedBefore = false;
+        let reconnecting = false;
+
         let logicalWidth = window.innerWidth;
         let logicalHeight = window.innerHeight;
+
+        function setAuthMessage(msg, color = '#fcd34d') {
+            authMessage.textContent = msg;
+            authMessage.style.color = color;
+        }
+
+        function setConnectionStatus(text, type) {
+            connectionStatus.textContent = text;
+            connectionStatusCard.className = `top-card status-${type}`;
+        }
+
+        async function fetchJSON(url, options = {}) {
+            const res = await fetch(url, {
+                credentials: 'same-origin',
+                ...options,
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(options.headers || {})
+                }
+            });
+            return res.json();
+        }
+
+        function resetPlayerState() {
+            player.worldX = 0;
+            player.worldY = 0;
+            player.currentDistance = player.normalDistance;
+            player.targetDistance = player.normalDistance;
+            player.rotationAngle = 0;
+            player.facingAngle = 0;
+            player.attackBlend = 0;
+            player.defendBlend = 0;
+            player.targetAttackBlend = 0;
+            player.targetDefendBlend = 0;
+            mouseState.left = false;
+            mouseState.right = false;
+            otherPlayers = {};
+        }
+
+        function showAuthPanel() {
+            authPanel.style.display = 'flex';
+            topBar.style.display = 'none';
+            loggedIn = false;
+            otherPlayers = {};
+        }
+
+        function hideAuthPanel() {
+            authPanel.style.display = 'none';
+            topBar.style.display = 'flex';
+        }
+
+        function onLoginSuccess(username) {
+            remoteLogoutHandled = false;
+            currentUsername = username;
+            loggedIn = true;
+            welcomeText.textContent = `欢迎，${username}`;
+            hideAuthPanel();
+            connectSocket();
+        }
+
+        function disconnectSocket() {
+            if (socket) {
+                socket.disconnect();
+                socket = null;
+            }
+        }
+
+        async function forceBackToLogin(message) {
+            if (remoteLogoutHandled) return;
+            remoteLogoutHandled = true;
+
+            disconnectSocket();
+            resetPlayerState();
+
+            const oldUsername = currentUsername;
+            loggedIn = false;
+            currentUsername = '';
+            hadConnectedBefore = false;
+            reconnecting = false;
+
+            setConnectionStatus('已断开', 'disconnected');
+            showAuthPanel();
+
+            usernameInput.value = oldUsername || '';
+            passwordInput.value = '';
+            setAuthMessage(message || '登录已失效，请重新登录', '#fca5a5');
+        }
+
+        function connectSocket() {
+            disconnectSocket();
+
+            setConnectionStatus('连接中', 'connecting');
+            reconnecting = false;
+
+            socket = io({
+                reconnection: true,
+                reconnectionAttempts: Infinity,
+                reconnectionDelay: 1000,
+                reconnectionDelayMax: 5000,
+                timeout: 10000
+            });
+
+            socket.on('connect', () => {
+                console.log('Socket 已连接:', socket.id);
+                otherPlayers = {};
+                remoteLogoutHandled = false;
+
+                if (hadConnectedBefore || reconnecting) {
+                    setConnectionStatus('已重连', 'reconnected');
+                } else {
+                    setConnectionStatus('已连接', 'connected');
+                }
+
+                hadConnectedBefore = true;
+                reconnecting = false;
+            });
+
+            socket.on('gameState', (serverPlayers) => {
+                otherPlayers = serverPlayers || {};
+            });
+
+            socket.on('movementCorrected', (data) => {
+                if (!loggedIn || !data) return;
+
+                if (typeof data.worldX === 'number') {
+                    player.worldX = data.worldX;
+                }
+                if (typeof data.worldY === 'number') {
+                    player.worldY = data.worldY;
+                }
+            });
+
+            socket.on('sessionReplaced', async (data) => {
+                const msg = data?.message || '你的账号已在其他地方登录';
+                await forceBackToLogin(msg);
+            });
+
+            socket.io.on('reconnect_attempt', () => {
+                reconnecting = true;
+                setConnectionStatus('连接中', 'connecting');
+            });
+
+            socket.io.on('reconnect', () => {
+                reconnecting = false;
+                setConnectionStatus('已重连', 'reconnected');
+            });
+
+            socket.on('connect_error', async (err) => {
+                console.error('Socket 连接失败:', err);
+                reconnecting = true;
+                setConnectionStatus('连接中', 'connecting');
+
+                try {
+                    const result = await fetchJSON('/api/me', { method: 'GET' });
+                    if (!result.loggedIn) {
+                        await forceBackToLogin('登录已失效，请重新登录');
+                    }
+                } catch (e) {
+                    console.error('检查登录状态失败:', e);
+                }
+            });
+
+            socket.on('disconnect', async (reason) => {
+                console.log('Socket 断开:', reason);
+
+                if (reason === 'io client disconnect') {
+                    setConnectionStatus('已断开', 'disconnected');
+                    return;
+                }
+
+                if (reason === 'io server disconnect') {
+                    setConnectionStatus('已断开', 'disconnected');
+                    try {
+                        const result = await fetchJSON('/api/me', { method: 'GET' });
+                        if (!result.loggedIn) {
+                            await forceBackToLogin('你的登录状态已失效，请重新登录');
+                        } else {
+                            reconnecting = true;
+                            setConnectionStatus('连接中', 'connecting');
+                            connectSocket();
+                        }
+                    } catch (e) {
+                        console.error(e);
+                    }
+                    return;
+                }
+
+                reconnecting = true;
+                setConnectionStatus('连接中', 'connecting');
+            });
+        }
+
+        async function checkLoginStatus() {
+            try {
+                const result = await fetchJSON('/api/me', {
+                    method: 'GET'
+                });
+
+                loadingMask.style.display = 'none';
+
+                if (result.loggedIn && result.username) {
+                    onLoginSuccess(result.username);
+                } else {
+                    showAuthPanel();
+                    setConnectionStatus('已断开', 'disconnected');
+                }
+            } catch (err) {
+                console.error(err);
+                loadingMask.style.display = 'none';
+                showAuthPanel();
+                setAuthMessage('无法连接服务器');
+                setConnectionStatus('已断开', 'disconnected');
+            }
+        }
+
+        async function handleLogin() {
+            const username = usernameInput.value.trim();
+            const password = passwordInput.value.trim();
+
+            if (!username || !password) {
+                setAuthMessage('请输入用户名和密码');
+                return;
+            }
+
+            loginBtn.disabled = true;
+            registerBtn.disabled = true;
+            setAuthMessage('正在登录...', '#93c5fd');
+
+            try {
+                const result = await fetchJSON('/api/login', {
+                    method: 'POST',
+                    body: JSON.stringify({ username, password })
+                });
+
+                if (!result.success) {
+                    setAuthMessage(result.message, '#fca5a5');
+                    return;
+                }
+
+                setAuthMessage(result.message, '#86efac');
+                passwordInput.value = '';
+                onLoginSuccess(result.username);
+            } catch (err) {
+                console.error(err);
+                setAuthMessage('登录请求失败', '#fca5a5');
+            } finally {
+                loginBtn.disabled = false;
+                registerBtn.disabled = false;
+            }
+        }
+
+        async function handleRegister() {
+            const username = usernameInput.value.trim();
+            const password = passwordInput.value.trim();
+
+            if (!username || !password) {
+                setAuthMessage('请输入用户名和密码');
+                return;
+            }
+
+            loginBtn.disabled = true;
+            registerBtn.disabled = true;
+            setAuthMessage('正在注册...', '#93c5fd');
+
+            try {
+                const result = await fetchJSON('/api/register', {
+                    method: 'POST',
+                    body: JSON.stringify({ username, password })
+                });
+
+                if (!result.success) {
+                    setAuthMessage(result.message, '#fca5a5');
+                    return;
+                }
+
+                setAuthMessage(result.message, '#86efac');
+                passwordInput.value = '';
+            } catch (err) {
+                console.error(err);
+                setAuthMessage('注册请求失败', '#fca5a5');
+            } finally {
+                loginBtn.disabled = false;
+                registerBtn.disabled = false;
+            }
+        }
+
+        async function handleLogout() {
+            disconnectSocket();
+
+            try {
+                const result = await fetchJSON('/api/logout', {
+                    method: 'POST',
+                    body: JSON.stringify({})
+                });
+
+                if (!result.success) {
+                    alert(result.message || '退出登录失败');
+                }
+            } catch (err) {
+                console.error(err);
+                alert('退出登录请求失败');
+            }
+
+            resetPlayerState();
+
+            usernameInput.value = '';
+            passwordInput.value = '';
+            currentUsername = '';
+            loggedIn = false;
+            hadConnectedBefore = false;
+            reconnecting = false;
+            setConnectionStatus('已断开', 'disconnected');
+            setAuthMessage('已退出登录', '#86efac');
+            showAuthPanel();
+        }
+
+        loginBtn.addEventListener('click', handleLogin);
+        registerBtn.addEventListener('click', handleRegister);
+        logoutBtn.addEventListener('click', handleLogout);
+
+        usernameInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') handleLogin();
+        });
+
+        passwordInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') handleLogin();
+        });
 
         function resizeCanvas() {
             logicalWidth = window.innerWidth;
@@ -45,9 +690,6 @@
             player.screenY = logicalHeight / 2;
         }
 
-        // ================= 图片加载区 =================
-        
-        // 1. 镂空身体图（眼眶是透明的，盖在最上面）
         const imgNormal = new Image();
         imgNormal.src = '/img/player-default.png';
 
@@ -57,7 +699,6 @@
         const imgDefend = new Image();
         imgDefend.src = '/img/player-defense.png';
 
-        // 2. 黑色眼底图（眼眶区域是黑的，垫在最底下）
         const imgNormalEye = new Image();
         imgNormalEye.src = '/img/player-default-eye.png';
 
@@ -67,16 +708,8 @@
         const imgDefendEye = new Image();
         imgDefendEye.src = '/img/player-defense-eye.png';
 
-        // ==============================================
-
-        const socket = io();
-        let otherPlayers = {};
-
-        socket.on('gameState', (serverPlayers) => {
-            otherPlayers = serverPlayers;
-        });
-
         const player = {
+            username: '',
             screenX: 0,
             screenY: 0,
             worldX: 0,
@@ -85,7 +718,7 @@
             petalCount: 5,
             normalDistance: 45,
             attackDistance: 90,
-            defendDistance: 36, // 防御时别贴进身体
+            defendDistance: 36,
             currentDistance: 45,
             targetDistance: 45,
             rotationAngle: 0,
@@ -131,12 +764,14 @@
         }
 
         window.addEventListener('mousedown', (e) => {
+            if (!loggedIn) return;
             if (e.button === 0) mouseState.left = true;
             if (e.button === 2) mouseState.right = true;
             updateStance();
         });
 
         window.addEventListener('mouseup', (e) => {
+            if (!loggedIn) return;
             if (e.button === 0) mouseState.left = false;
             if (e.button === 2) mouseState.right = false;
             updateStance();
@@ -166,8 +801,24 @@
             ctx.restore();
         }
 
+        function drawUsername(x, y, username) {
+            if (!username) return;
+
+            ctx.save();
+            ctx.font = '14px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            ctx.lineWidth = 4;
+            ctx.strokeStyle = 'rgba(0, 0, 0, 0.7)';
+            ctx.fillStyle = '#ffffff';
+
+            const textY = y + 40;
+            ctx.strokeText(username, x, textY);
+            ctx.fillText(username, x, textY);
+            ctx.restore();
+        }
+
         function drawPlayer(x, y, pData, isMe) {
-            // 画花瓣
             for (let i = 0; i < pData.petalCount; i++) {
                 const angle = pData.rotationAngle + (i * (Math.PI * 2) / pData.petalCount);
                 const petalX = Math.round(x + Math.cos(angle) * pData.currentDistance);
@@ -197,17 +848,12 @@
             const aBlend = pData.attackBlend || 0;
             const dBlend = pData.defendBlend || 0;
 
-            // ================== 开始分层渲染角色 ==================
-
-            // 【第一层】底层黑色眼眶
             drawBodyImg(imgNormalEye, 1);
             drawBodyImg(imgAttackEye, aBlend);
             drawBodyImg(imgDefendEye, dBlend);
 
-            // 【第二层】白色动态眼球
             const scale = imgSize / 96;
 
-            // 删除整体向左偏移，改回左右对称；保留略微向下
             const leftEyeBaseX = -12 * scale;
             const leftEyeBaseY = -7.5 * scale;
             const rightEyeBaseX = 12 * scale;
@@ -215,7 +861,7 @@
 
             const highlightMove = 6 * scale;
             const facingAngle = pData.facingAngle || 0;
-            
+
             const eyeOffsetXScale = 0.65;
             const eyeOffsetYScale = 1.15;
 
@@ -246,98 +892,112 @@
                 Math.PI * 2
             );
             ctx.fill();
-
             ctx.restore();
 
-            // 【第三层】顶层镂空身体（裁掉超出眼眶的眼球）
             drawBodyImg(imgNormal, 1);
             drawBodyImg(imgAttack, aBlend);
             drawBodyImg(imgDefend, dBlend);
 
-            // ======================================================
+            drawUsername(x, y, pData.username);
         }
 
         function gameLoop() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.clearRect(0, 0, logicalWidth, logicalHeight);
 
-            const dx = player.mouseX - player.screenX;
-            const dy = player.mouseY - player.screenY;
-            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (loggedIn) {
+                player.username = currentUsername;
 
-            player.facingAngle = Math.atan2(dy, dx);
+                const dx = player.mouseX - player.screenX;
+                const dy = player.mouseY - player.screenY;
+                const dist = Math.sqrt(dx * dx + dy * dy);
 
-            if (dist > 0) {
-                const speedRatio = Math.min(dist / player.maxMouseDist, 1);
-                const currentSpeed = player.maxSpeed * speedRatio;
-                player.worldX += (dx / dist) * currentSpeed;
-                player.worldY += (dy / dist) * currentSpeed;
-            }
+                player.facingAngle = Math.atan2(dy, dx);
 
-            player.rotationAngle += player.rotationSpeed;
-            player.currentDistance += (player.targetDistance - player.currentDistance) * 0.15;
-            player.attackBlend += (player.targetAttackBlend - player.attackBlend) * 0.15;
-            player.defendBlend += (player.targetDefendBlend - player.defendBlend) * 0.15;
+                if (dist > 0) {
+                    const speedRatio = Math.min(dist / player.maxMouseDist, 1);
+                    const currentSpeed = player.maxSpeed * speedRatio;
+                    player.worldX += (dx / dist) * currentSpeed;
+                    player.worldY += (dy / dist) * currentSpeed;
+                }
 
-            socket.emit('playerUpdate', {
-                worldX: player.worldX,
-                worldY: player.worldY,
-                currentDistance: player.currentDistance,
-                rotationAngle: player.rotationAngle,
-                facingAngle: player.facingAngle,
-                attackBlend: player.attackBlend,
-                defendBlend: player.defendBlend
-            });
+                player.rotationAngle += player.rotationSpeed;
+                player.currentDistance += (player.targetDistance - player.currentDistance) * 0.15;
+                player.attackBlend += (player.targetAttackBlend - player.attackBlend) * 0.15;
+                player.defendBlend += (player.targetDefendBlend - player.defendBlend) * 0.15;
 
-            drawGrid();
+                if (socket && socket.connected) {
+                    socket.emit('playerUpdate', {
+                        worldX: player.worldX,
+                        worldY: player.worldY,
+                        currentDistance: player.currentDistance,
+                        rotationAngle: player.rotationAngle,
+                        facingAngle: player.facingAngle,
+                        attackBlend: player.attackBlend,
+                        defendBlend: player.defendBlend
+                    });
+                }
 
-            // 画鼠标指示线
-            if (dist > 10) {
-                ctx.save();
-                ctx.translate(player.screenX, player.screenY);
-                ctx.rotate(player.facingAngle);
+                drawGrid();
 
-                const shaftWidth = 6;
-                const headWidth = 20;
-                const actualHeadLength = Math.min(18, dist);
-                const shaftLength = dist - actualHeadLength;
+                if (dist > 10) {
+                    ctx.save();
+                    ctx.translate(player.screenX, player.screenY);
+                    ctx.rotate(player.facingAngle);
 
-                ctx.beginPath();
-                ctx.moveTo(0, -shaftWidth / 2);
-                ctx.lineTo(shaftLength, -shaftWidth / 2);
-                ctx.lineTo(shaftLength, -headWidth / 2);
-                ctx.lineTo(dist, 0);
-                ctx.lineTo(shaftLength, headWidth / 2);
-                ctx.lineTo(shaftLength, shaftWidth / 2);
-                ctx.lineTo(0, shaftWidth / 2);
-                ctx.closePath();
+                    const shaftWidth = 6;
+                    const headWidth = 20;
+                    const actualHeadLength = Math.min(18, dist);
+                    const shaftLength = dist - actualHeadLength;
 
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
-                ctx.fill();
-                ctx.restore();
-            }
+                    ctx.beginPath();
+                    ctx.moveTo(0, -shaftWidth / 2);
+                    ctx.lineTo(shaftLength, -shaftWidth / 2);
+                    ctx.lineTo(shaftLength, -headWidth / 2);
+                    ctx.lineTo(dist, 0);
+                    ctx.lineTo(shaftLength, headWidth / 2);
+                    ctx.lineTo(shaftLength, shaftWidth / 2);
+                    ctx.lineTo(0, shaftWidth / 2);
+                    ctx.closePath();
 
-            // 画其他玩家和自己
-            for (let id in otherPlayers) {
-                const p = otherPlayers[id];
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
+                    ctx.fill();
+                    ctx.restore();
+                }
 
-                if (id === socket.id) {
-                    drawPlayer(player.screenX, player.screenY, player, true);
-                } else {
-                    const drawX = player.screenX + (p.worldX - player.worldX);
-                    const drawY = player.screenY + (p.worldY - player.worldY);
+                for (let id in otherPlayers) {
+                    const p = otherPlayers[id];
+                    if (!p) continue;
 
-                    if (
-                        drawX > -100 && drawX < logicalWidth + 100 &&
-                        drawY > -100 && drawY < logicalHeight + 100
-                    ) {
-                        drawPlayer(drawX, drawY, p, false);
+                    if (socket && id === socket.id) {
+                        drawPlayer(player.screenX, player.screenY, {
+                            ...player,
+                            username: currentUsername
+                        }, true);
+                    } else {
+                        if (p.username === currentUsername) continue;
+
+                        const drawX = player.screenX + (p.worldX - player.worldX);
+                        const drawY = player.screenY + (p.worldY - player.worldY);
+
+                        if (
+                            drawX > -100 && drawX < logicalWidth + 100 &&
+                            drawY > -100 && drawY < logicalHeight + 100
+                        ) {
+                            drawPlayer(drawX, drawY, p, false);
+                        }
                     }
                 }
+            } else {
+                ctx.save();
+                ctx.fillStyle = 'rgba(0,0,0,0.15)';
+                ctx.fillRect(0, 0, logicalWidth, logicalHeight);
+                ctx.restore();
             }
 
             requestAnimationFrame(gameLoop);
         }
 
+        checkLoginStatus();
         gameLoop();
     </script>
 </body>
