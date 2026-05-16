@@ -273,6 +273,21 @@
             font-weight: 700;
             z-index: 30;
         }
+
+        #wasmStatus {
+            position: fixed;
+            right: 16px;
+            bottom: 16px;
+            z-index: 12;
+            padding: 8px 12px;
+            border-radius: 12px;
+            background: rgba(17, 24, 39, 0.72);
+            border: 1px solid rgba(255,255,255,0.08);
+            backdrop-filter: blur(8px);
+            font-size: 12px;
+            color: #cbd5e1;
+            pointer-events: none;
+        }
     </style>
 </head>
 <body oncontextmenu="return false;">
@@ -316,6 +331,7 @@
     </div>
 
     <canvas id="gameCanvas"></canvas>
+    <div id="wasmStatus">WASM 花瓣：初始化中...</div>
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
@@ -334,6 +350,7 @@
         const loadingMask = document.getElementById('loadingMask');
         const connectionStatus = document.getElementById('connectionStatus');
         const connectionStatusCard = document.getElementById('connectionStatusCard');
+        const wasmStatus = document.getElementById('wasmStatus');
 
         let socket = null;
         let loggedIn = false;
@@ -818,19 +835,335 @@
             ctx.restore();
         }
 
+        // =========================
+        // WASM 花瓣渲染
+        // =========================
+
+        const wasmHiddenCanvas = document.createElement('canvas');
+        wasmHiddenCanvas.width = 1024;
+        wasmHiddenCanvas.height = 1024;
+        wasmHiddenCanvas.style.display = 'none';
+        document.body.appendChild(wasmHiddenCanvas);
+
+        window.__trackedCanvases = [];
+        window.__wasmReady = false;
+
+        function setWasmStatus(text) {
+            wasmStatus.textContent = text;
+        }
+
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        function readCString(ptr, maxLen = 10 * 1024 * 1024) {
+            if (!ptr || !window.Module || !Module.HEAPU8) return '';
+            const heap = Module.HEAPU8;
+            let end = ptr;
+            let count = 0;
+            while (end < heap.length && heap[end] !== 0 && count < maxLen) {
+                end++;
+                count++;
+            }
+            if (count === 0) return '';
+            return new TextDecoder().decode(heap.subarray(ptr, end));
+        }
+
+        function isDataURL(str) {
+            return typeof str === 'string' && str.startsWith('data:image/');
+        }
+
+        function trackCanvas(canvas, source) {
+            if (!canvas) return canvas;
+            if (!canvas.__tracked_id) {
+                canvas.__tracked_id = window.__trackedCanvases.length + 1;
+                canvas.__tracked_source = source || 'unknown';
+                canvas.__createdAt = performance.now();
+                canvas.__lastDrawAt = 0;
+                window.__trackedCanvases.push(canvas);
+            }
+            return canvas;
+        }
+
+        (function patchCanvasCreation() {
+            const rawCreateElement = document.createElement.bind(document);
+            document.createElement = function(tagName, ...rest) {
+                const el = rawCreateElement(tagName, ...rest);
+                if (String(tagName).toLowerCase() === 'canvas') {
+                    trackCanvas(el, 'document.createElement');
+                }
+                return el;
+            };
+
+            if (typeof window.OffscreenCanvas !== 'undefined') {
+                const RealOffscreenCanvas = window.OffscreenCanvas;
+                class WrappedOffscreenCanvas extends RealOffscreenCanvas {
+                    constructor(...args) {
+                        super(...args);
+                        trackCanvas(this, 'OffscreenCanvas');
+                    }
+                }
+                window.OffscreenCanvas = WrappedOffscreenCanvas;
+            }
+
+            trackCanvas(wasmHiddenCanvas, 'Module.canvas');
+            trackCanvas(canvas, 'gameCanvas');
+        })();
+
+        function patchContextMethods(proto) {
+            if (!proto) return;
+            const names = [
+                'fill', 'stroke', 'drawImage', 'putImageData',
+                'fillRect', 'strokeRect', 'clearRect',
+                'fillText', 'strokeText', 'beginPath'
+            ];
+            for (const name of names) {
+                const raw = proto[name];
+                if (typeof raw !== 'function' || raw.__patched_for_wasm_capture) continue;
+                proto[name] = function(...args) {
+                    try {
+                        if (this && this.canvas) {
+                            trackCanvas(this.canvas, 'ctx.canvas');
+                            this.canvas.__lastDrawAt = performance.now();
+                        }
+                    } catch (e) {}
+                    return raw.apply(this, args);
+                };
+                proto[name].__patched_for_wasm_capture = true;
+            }
+        }
+
+        if (window.CanvasRenderingContext2D) {
+            patchContextMethods(CanvasRenderingContext2D.prototype);
+        }
+        try {
+            if (window.OffscreenCanvasRenderingContext2D) {
+                patchContextMethods(OffscreenCanvasRenderingContext2D.prototype);
+            }
+        } catch (e) {}
+
+        function markWasmReady(source) {
+            if (window.__wasmReady) return;
+            window.__wasmReady = true;
+            console.log('WASM 初始化完成 source =', source);
+            setWasmStatus('WASM 花瓣：已就绪');
+            if (window.__wasmReadyPoll) {
+                clearInterval(window.__wasmReadyPoll);
+                window.__wasmReadyPoll = null;
+            }
+
+            preloadWasmPetal([128, 1, 0, 2]).catch(err => {
+                console.error('预加载花瓣失败:', err);
+            });
+        }
+
+        window.Module = {
+            noInitialRun: true,
+            canvas: wasmHiddenCanvas,
+            locateFile(path) {
+                if (path.endsWith('.wasm')) return './client.wasm';
+                return path;
+            },
+            onRuntimeInitialized() {
+                markWasmReady('onRuntimeInitialized');
+            }
+        };
+
+        window.__wasmReadyPoll = setInterval(() => {
+            try {
+                if (
+                    window.Module &&
+                    Module.asm &&
+                    typeof Module._Util_GeneratePetalImage === 'function'
+                ) {
+                    markWasmReady('polling');
+                }
+            } catch (e) {}
+        }, 200);
+
+        function getTrackedCanvasSnapshot() {
+            return window.__trackedCanvases.map(c => ({
+                ref: c,
+                id: c.__tracked_id,
+                source: c.__tracked_source,
+                createdAt: c.__createdAt || 0,
+                lastDrawAt: c.__lastDrawAt || 0,
+                width: c.width || 0,
+                height: c.height || 0
+            }));
+        }
+
+        function pickBestCanvas(beforeSnapshot, afterSnapshot, startedAt) {
+            const beforeIds = new Set(beforeSnapshot.map(x => x.id));
+
+            let candidates = afterSnapshot.filter(x =>
+                !beforeIds.has(x.id) &&
+                x.lastDrawAt >= startedAt &&
+                x.width > 0 &&
+                x.height > 0
+            );
+            if (candidates.length > 0) {
+                candidates.sort((a, b) => b.lastDrawAt - a.lastDrawAt);
+                return candidates[0].ref;
+            }
+
+            candidates = afterSnapshot.filter(x =>
+                x.lastDrawAt >= startedAt &&
+                x.width > 0 &&
+                x.height > 0
+            );
+            if (candidates.length > 0) {
+                candidates.sort((a, b) => b.lastDrawAt - a.lastDrawAt);
+                return candidates[0].ref;
+            }
+
+            candidates = afterSnapshot.filter(x =>
+                x.width > 0 &&
+                x.height > 0 &&
+                x.ref !== canvas
+            );
+            if (candidates.length > 0) {
+                candidates.sort((a, b) => b.id - a.id);
+                return candidates[0].ref;
+            }
+
+            return null;
+        }
+
+        function loadImageFromDataURL(dataURL) {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                img.onload = () => resolve(img);
+                img.onerror = reject;
+                img.src = dataURL;
+            });
+        }
+
+        const petalSpriteCache = new Map();
+        const petalSpritePending = new Map();
+
+        function makePetalKey(args) {
+            return JSON.stringify(args || []);
+        }
+
+        async function renderPetalSprite(args, waitMs = 120) {
+            if (!window.__wasmReady) {
+                throw new Error('WASM 还没初始化完成');
+            }
+
+            if (!Module || typeof Module._Util_GeneratePetalImage !== 'function') {
+                throw new Error('未找到 Module._Util_GeneratePetalImage');
+            }
+
+            const before = getTrackedCanvasSnapshot();
+            const startedAt = performance.now();
+
+            let ret;
+            try {
+                ret = Module._Util_GeneratePetalImage.apply(null, args);
+            } catch (e) {
+                throw new Error(e && e.message ? e.message : String(e));
+            }
+
+            if (typeof ret === 'number' && ret > 0) {
+                try {
+                    const maybeStr = readCString(ret);
+                    if (maybeStr && isDataURL(maybeStr)) {
+                        return await loadImageFromDataURL(maybeStr);
+                    }
+                } catch (e) {}
+            }
+
+            await sleep(waitMs);
+
+            const after = getTrackedCanvasSnapshot();
+            const sourceCanvas = pickBestCanvas(before, after, startedAt);
+
+            if (!sourceCanvas) {
+                throw new Error('没找到 wasm 实际绘制的 canvas');
+            }
+
+            const copy = document.createElement('canvas');
+            copy.width = sourceCanvas.width;
+            copy.height = sourceCanvas.height;
+
+            const copyCtx = copy.getContext('2d');
+            copyCtx.clearRect(0, 0, copy.width, copy.height);
+            copyCtx.drawImage(sourceCanvas, 0, 0);
+
+            return copy;
+        }
+
+        async function getPetalSprite(args) {
+            const key = makePetalKey(args);
+
+            if (petalSpriteCache.has(key)) {
+                return petalSpriteCache.get(key);
+            }
+
+            if (petalSpritePending.has(key)) {
+                return petalSpritePending.get(key);
+            }
+
+            const task = renderPetalSprite(args).then(sprite => {
+                petalSpriteCache.set(key, sprite);
+                petalSpritePending.delete(key);
+                return sprite;
+            }).catch(err => {
+                petalSpritePending.delete(key);
+                throw err;
+            });
+
+            petalSpritePending.set(key, task);
+            return task;
+        }
+
+        function preloadWasmPetal(args) {
+            return getPetalSprite(args);
+        }
+
+        function drawPetalFallback(ctx, x, y, radius, isMe) {
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, Math.PI * 2);
+            ctx.fillStyle = isMe ? '#FF69B4' : '#FF8C00';
+            ctx.fill();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#000';
+            ctx.stroke();
+        }
+
+        function drawWasmPetal(ctx, x, y, args, drawSize, isMe = false) {
+            const key = makePetalKey(args);
+            const sprite = petalSpriteCache.get(key);
+
+            if (sprite) {
+                const drawX = Math.round(x - drawSize / 2);
+                const drawY = Math.round(y - drawSize / 2);
+                ctx.drawImage(sprite, drawX, drawY, drawSize, drawSize);
+                return true;
+            }
+
+            if (!petalSpritePending.has(key) && window.__wasmReady) {
+                getPetalSprite(args).catch(err => {
+                    console.error('获取 wasm 花瓣失败:', err);
+                    setWasmStatus('WASM 花瓣：加载失败');
+                });
+            }
+
+            drawPetalFallback(ctx, x, y, Math.max(6, drawSize * 0.3), isMe);
+            return false;
+        }
+
         function drawPlayer(x, y, pData, isMe) {
+            const petalArgs = [128, 1, 0, 2];
+            const petalSize = 28;
+
             for (let i = 0; i < pData.petalCount; i++) {
                 const angle = pData.rotationAngle + (i * (Math.PI * 2) / pData.petalCount);
                 const petalX = Math.round(x + Math.cos(angle) * pData.currentDistance);
                 const petalY = Math.round(y + Math.sin(angle) * pData.currentDistance);
 
-                ctx.beginPath();
-                ctx.arc(petalX, petalY, 10, 0, Math.PI * 2);
-                ctx.fillStyle = isMe ? '#FF69B4' : '#FF8C00';
-                ctx.fill();
-                ctx.lineWidth = 2;
-                ctx.strokeStyle = '#000';
-                ctx.stroke();
+                drawWasmPetal(ctx, petalX, petalY, petalArgs, petalSize, isMe);
             }
 
             const imgSize = 48;
@@ -997,7 +1330,39 @@
             requestAnimationFrame(gameLoop);
         }
 
+        function loadWasmClientScript() {
+            return new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = './client.js';
+                script.onload = resolve;
+                script.onerror = () => reject(new Error('client.js 加载失败'));
+                document.body.appendChild(script);
+            });
+        }
+
+        async function initWasm() {
+            try {
+                setWasmStatus('WASM 花瓣：加载 client.js 中...');
+                await loadWasmClientScript();
+
+                let waited = 0;
+                while (!window.__wasmReady && waited < 15000) {
+                    await sleep(100);
+                    waited += 100;
+                }
+
+                if (!window.__wasmReady) {
+                    setWasmStatus('WASM 花瓣：初始化超时');
+                    console.error('WASM 初始化超时');
+                }
+            } catch (e) {
+                setWasmStatus('WASM 花瓣：加载失败');
+                console.error(e);
+            }
+        }
+
         checkLoginStatus();
+        initWasm();
         gameLoop();
     </script>
 </body>
