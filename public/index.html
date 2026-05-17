@@ -602,12 +602,17 @@
 
             socket.on('gameState', (serverPlayers) => {
                 otherPlayers = serverPlayers || {};
-            });
 
-            socket.on('movementCorrected', (data) => {
-                if (!loggedIn || !data) return;
-                if (typeof data.worldX === 'number') player.worldX = data.worldX;
-                if (typeof data.worldY === 'number') player.worldY = data.worldY;
+                if (socket && socket.id && otherPlayers[socket.id]) {
+                    const me = otherPlayers[socket.id];
+                    player.worldX = Number(me.worldX) || 0;
+                    player.worldY = Number(me.worldY) || 0;
+                    player.currentDistance = Number(me.currentDistance) || player.normalDistance;
+                    player.rotationAngle = Number(me.rotationAngle) || 0;
+                    player.facingAngle = Number(me.facingAngle) || 0;
+                    player.attackBlend = Number(me.attackBlend) || 0;
+                    player.defendBlend = Number(me.defendBlend) || 0;
+                }
             });
 
             socket.on('sessionReplaced', async (data) => {
@@ -1768,30 +1773,16 @@
                 const dy = player.mouseY - player.screenY;
                 const dist = Math.sqrt(dx * dx + dy * dy);
 
-                player.facingAngle = Math.atan2(dy, dx);
-
-                if (dist > 0) {
-                    const speedRatio = Math.min(dist / player.maxMouseDist, 1);
-                    const currentSpeed = player.maxSpeed * speedRatio;
-                    player.worldX += (dx / dist) * currentSpeed;
-                    player.worldY += (dy / dist) * currentSpeed;
+                if (dist > 0.0001) {
+                    player.facingAngle = Math.atan2(dy, dx);
                 }
 
-                player.rotationAngle += player.rotationSpeed;
-                player.currentDistance += (player.targetDistance - player.currentDistance) * 0.15;
-                player.attackBlend += (player.targetAttackBlend - player.attackBlend) * 0.15;
-                player.defendBlend += (player.targetDefendBlend - player.defendBlend) * 0.15;
-
                 if (socket && socket.connected) {
-                    socket.emit('playerUpdate', {
-                        worldX: player.worldX,
-                        worldY: player.worldY,
-                        currentDistance: player.currentDistance,
-                        rotationAngle: player.rotationAngle,
-                        facingAngle: player.facingAngle,
-                        attackBlend: player.attackBlend,
-                        defendBlend: player.defendBlend,
-                        petalCount: player.petalCount,
+                    socket.emit('playerInput', {
+                        mouseDX: dx,
+                        mouseDY: dy,
+                        leftDown: mouseState.left,
+                        rightDown: mouseState.right,
                         loadout: loadoutState.slots.map(item => item ? clonePetalItem(item) : null)
                     });
                 }
@@ -1831,21 +1822,20 @@
                         drawPlayer(player.screenX, player.screenY, {
                             ...player,
                             username: currentUsername,
-                            petalCount: player.petalCount,
+                            petalCount: loadoutState.slots.filter(Boolean).length,
                             loadout: loadoutState.slots
                         }, true);
-                    } else {
-                        if (p.username === currentUsername) continue;
+                        continue;
+                    }
 
-                        const drawX = player.screenX + (p.worldX - player.worldX);
-                        const drawY = player.screenY + (p.worldY - player.worldY);
+                    const drawX = player.screenX + (p.worldX - player.worldX);
+                    const drawY = player.screenY + (p.worldY - player.worldY);
 
-                        if (
-                            drawX > -100 && drawX < logicalWidth + 100 &&
-                            drawY > -100 && drawY < logicalHeight + 100
-                        ) {
-                            drawPlayer(drawX, drawY, p, false);
-                        }
+                    if (
+                        drawX > -100 && drawX < logicalWidth + 100 &&
+                        drawY > -100 && drawY < logicalHeight + 100
+                    ) {
+                        drawPlayer(drawX, drawY, p, false);
                     }
                 }
 
