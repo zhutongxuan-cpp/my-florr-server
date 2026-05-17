@@ -1,500 +1,477 @@
-const express = require('express');
+const path = require('path');
 const http = require('http');
+const express = require('express');
 const session = require('express-session');
-const SQLiteStoreFactory = require('connect-sqlite3');
-const { Server } = require('socket.io');
-const sqlite3 = require('sqlite3').verbose();
+const MongoStore = require('connect-mongo');
+const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
-
-const SQLiteStore = SQLiteStoreFactory(session);
+const { Server } = require('socket.io');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
 
-const players = {};
-const activeUserSockets = new Map(); // username -> socket.id
-
-// ================= 数据库 =================
-const db = new sqlite3.Database('./users.db');
-const sessionsDb = new sqlite3.Database('./sessions.db');
-
-db.serialize(() => {
-    db.run(`
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL
-        )
-    `);
+const io = new Server(server, {
+    cors: {
+        origin: true,
+        credentials: true
+    }
 });
 
-// ================= 中间件 =================
+const PORT = process.env.PORT || 3000;
+const MONGODB_URI = process.env.MONGODB_URI;
+const SESSION_SECRET = process.env.SESSION_SECRET || 'change-this-secret';
+const NODE_ENV = process.env.NODE_ENV || 'development';
+
+if (!MONGODB_URI) {
+    console.error('缺少环境变量 MONGODB_URI');
+    process.exit(1);
+}
+
+mongoose.set('strictQuery', true);
+
+mongoose.connect(MONGODB_URI, {
+    autoIndex: true
+}).then(() => {
+    console.log('MongoDB connected');
+}).catch(err => {
+    console.error('MongoDB connect error:', err);
+    process.exit(1);
+});
+
+const petalSchema = new mongoose.Schema({
+    petalId: { type: Number, default: 1 },
+    rarity: { type: Number, default: 0 },
+    name: { type: String, default: 'Basic' }
+}, { _id: false });
+
+const playerDataSchema = new mongoose.Schema({
+    inventory: { type: [petalSchema], default: [] },
+    loadout: {
+        type: [petalSchema],
+        default: () => ([
+            { petalId: 1, rarity: 0, name: 'Basic' },
+            { petalId: 1, rarity: 0, name: 'Basic' },
+            { petalId: 1, rarity: 0, name: 'Basic' },
+            { petalId: 1, rarity: 0, name: 'Basic' },
+            { petalId: 1, rarity: 0, name: 'Basic' }
+        ])
+    }
+}, { _id: false });
+
+const userSchema = new mongoose.Schema({
+    username: { type: String, required: true, unique: true, index: true },
+    passwordHash: { type: String, required: true },
+    playerData: { type: playerDataSchema, default: () => ({}) }
+}, {
+    timestamps: true
+});
+
+const User = mongoose.model('User', userSchema);
+
 app.set('trust proxy', 1);
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true }));
-app.use(express.static('public'));
-
-const sessionStore = new SQLiteStore({
-    db: 'sessions.db',
-    dir: './',
-    table: 'sessions',
-    concurrentDB: true
-});
-
-const isProduction = process.env.NODE_ENV === 'production';
+app.use(express.static(path.join(__dirname, 'public')));
 
 const sessionMiddleware = session({
-    store: sessionStore,
-    secret: process.env.SESSION_SECRET || 'my-florr-super-secret-key',
-    name: 'florr.sid',
+    name: 'myflorr.sid',
+    secret: SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
     rolling: true,
     cookie: {
         httpOnly: true,
         sameSite: 'lax',
-        secure: isProduction,
+        secure: NODE_ENV === 'production',
         maxAge: 1000 * 60 * 60 * 24 * 7
-    }
+    },
+    store: MongoStore.create({
+        mongoUrl: MONGODB_URI,
+        collectionName: 'sessions'
+    })
 });
 
 app.use(sessionMiddleware);
 
-io.use((socket, next) => {
-    sessionMiddleware(socket.request, {}, next);
-});
+io.engine.use(sessionMiddleware);
 
-// ================= 游戏参数 / 反作弊参数 =================
-const GAME_CONFIG = {
-    normalDistance: 45,
-    attackDistance: 90,
-    defendDistance: 36,
-    maxMoveSpeed: 6,
-    maxMoveDtMs: 120,
-    graceExtraDistance: 4,
-    minUpdateIntervalMs: 8,
-    maxWorldCoordAbs: 1000000,
-    maxRotationSpeedPerSec: 8,
-    maxFacingJumpPerUpdate: Math.PI,
-    blendMin: 0,
-    blendMax: 1
-};
+function normalizeLoadout(loadout) {
+    const arr = Array.isArray(loadout) ? loadout.slice(0, 5) : [];
+    const result = [];
 
-// ================= 工具函数 =================
+    for (let i = 0; i < 5; i++) {
+        const item = arr[i];
+        if (!item) {
+            result.push(null);
+        } else {
+            result.push({
+                petalId: Number(item.petalId ?? 1) || 1,
+                rarity: Number(item.rarity ?? 0) || 0,
+                name: String(item.name || 'Basic')
+            });
+        }
+    }
+
+    return result;
+}
+
+function normalizeInventory(inventory) {
+    if (!Array.isArray(inventory)) return [];
+    return inventory.map(item => ({
+        petalId: Number(item?.petalId ?? 1) || 1,
+        rarity: Number(item?.rarity ?? 0) || 0,
+        name: String(item?.name || 'Basic')
+    }));
+}
+
 function isValidUsername(username) {
-    return /^[A-Za-z0-9_\u4e00-\u9fa5]{3,15}$/.test(username);
+    if (typeof username !== 'string') return false;
+    if (username.length < 3 || username.length > 15) return false;
+    return /^[\u4e00-\u9fa5a-zA-Z0-9_]+$/.test(username);
 }
 
 function isValidPassword(password) {
-    return /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{5,15}$/.test(password);
+    if (typeof password !== 'string') return false;
+    if (password.length < 5 || password.length > 15) return false;
+    const hasLetter = /[A-Za-z]/.test(password);
+    const hasNumber = /\d/.test(password);
+    return hasLetter && hasNumber;
 }
 
-function publicUserData(player) {
+function requireLogin(req, res, next) {
+    if (!req.session || !req.session.userId || !req.session.username) {
+        return res.status(401).json({
+            success: false,
+            loggedIn: false,
+            message: '未登录'
+        });
+    }
+    next();
+}
+
+const onlinePlayers = {};
+const userToSocketId = new Map();
+
+function buildSafePlayerData(socketId) {
+    const p = onlinePlayers[socketId];
+    if (!p) return null;
+
     return {
-        username: player.username,
-        worldX: player.worldX,
-        worldY: player.worldY,
-        currentDistance: player.currentDistance,
-        rotationAngle: player.rotationAngle,
-        facingAngle: player.facingAngle,
-        attackBlend: player.attackBlend,
-        defendBlend: player.defendBlend,
-        petalCount: player.petalCount
+        username: p.username,
+        worldX: p.worldX,
+        worldY: p.worldY,
+        currentDistance: p.currentDistance,
+        rotationAngle: p.rotationAngle,
+        facingAngle: p.facingAngle,
+        attackBlend: p.attackBlend,
+        defendBlend: p.defendBlend,
+        petalCount: p.petalCount,
+        loadout: p.loadout
     };
 }
 
-function cleanupExpiredSessions() {
-    sessionsDb.run(
-        'DELETE FROM sessions WHERE expired < ?',
-        [Date.now()],
-        (err) => {
-            if (err && !String(err.message || '').includes('no such table')) {
-                console.error('清理过期 session 失败:', err);
-            }
-        }
-    );
-}
-
-function destroySessionBySid(sid) {
-    return new Promise((resolve) => {
-        sessionStore.destroy(sid, (err) => {
-            if (err) {
-                console.error(`销毁 session 失败 sid=${sid}:`, err);
-            }
-            resolve();
-        });
-    });
-}
-
-function getAllSessions() {
-    return new Promise((resolve) => {
-        sessionStore.all((err, sessions) => {
-            if (err) {
-                console.error('读取全部 sessions 失败:', err);
-                return resolve({});
-            }
-            resolve(sessions || {});
-        });
-    });
-}
-
-async function destroyOtherSessionsOfUsername(username, keepSid) {
-    const sessions = await getAllSessions();
-    const tasks = [];
-
-    for (const sid of Object.keys(sessions)) {
-        const sess = sessions[sid];
-        const sessUsername = sess?.user?.username;
-
-        if (sessUsername === username && sid !== keepSid) {
-            tasks.push(destroySessionBySid(sid));
-        }
+function broadcastGameState() {
+    const snapshot = {};
+    for (const socketId of Object.keys(onlinePlayers)) {
+        snapshot[socketId] = buildSafePlayerData(socketId);
     }
-
-    await Promise.all(tasks);
+    io.emit('gameState', snapshot);
 }
 
-function kickUserSocket(username, message = '你的账号已在其他地方登录', exceptSocketId = null) {
-    const socketId = activeUserSockets.get(username);
-    if (!socketId) return;
-
-    if (exceptSocketId && socketId === exceptSocketId) return;
-
-    const oldSocket = io.sockets.sockets.get(socketId);
-    if (!oldSocket) {
-        activeUserSockets.delete(username);
-        delete players[socketId];
-        return;
-    }
-
-    oldSocket.emit('sessionReplaced', { message });
-
-    delete players[socketId];
-    activeUserSockets.delete(username);
-
-    oldSocket.disconnect(true);
-}
-
-function clamp(value, min, max) {
-    return Math.max(min, Math.min(max, value));
-}
-
-function safeNumber(value, fallback = 0) {
-    const n = Number(value);
-    return Number.isFinite(n) ? n : fallback;
-}
-
-function normalizeAngle(angle) {
-    let a = angle;
-    while (a > Math.PI) a -= Math.PI * 2;
-    while (a < -Math.PI) a += Math.PI * 2;
-    return a;
-}
-
-function clampAngleChange(current, target, maxDelta) {
-    const diff = normalizeAngle(target - current);
-    const limited = clamp(diff, -maxDelta, maxDelta);
-    return normalizeAngle(current + limited);
-}
-
-function resetPlayerOfSocket(socketId, username) {
-    players[socketId] = {
-        username,
-        worldX: 0,
-        worldY: 0,
-        currentDistance: GAME_CONFIG.normalDistance,
-        rotationAngle: 0,
-        facingAngle: 0,
-        attackBlend: 0,
-        defendBlend: 0,
-        petalCount: 5,
-        lastUpdateAt: Date.now()
-    };
-}
-
-function applyMovementAntiCheat(player, data, socket) {
-    const now = Date.now();
-    const elapsedRaw = now - (player.lastUpdateAt || now);
-    const elapsed = clamp(elapsedRaw, GAME_CONFIG.minUpdateIntervalMs, GAME_CONFIG.maxMoveDtMs);
-    player.lastUpdateAt = now;
-
-    const incomingX = safeNumber(data.worldX, player.worldX);
-    const incomingY = safeNumber(data.worldY, player.worldY);
-
-    const safeTargetX = clamp(incomingX, -GAME_CONFIG.maxWorldCoordAbs, GAME_CONFIG.maxWorldCoordAbs);
-    const safeTargetY = clamp(incomingY, -GAME_CONFIG.maxWorldCoordAbs, GAME_CONFIG.maxWorldCoordAbs);
-
-    const dx = safeTargetX - player.worldX;
-    const dy = safeTargetY - player.worldY;
-    const distance = Math.sqrt(dx * dx + dy * dy);
-
-    const maxAllowedDistance =
-        GAME_CONFIG.maxMoveSpeed * (elapsed / 16.6667) + GAME_CONFIG.graceExtraDistance;
-
-    if (distance <= maxAllowedDistance || distance === 0) {
-        player.worldX = safeTargetX;
-        player.worldY = safeTargetY;
-    } else {
-        const ratio = maxAllowedDistance / distance;
-        player.worldX += dx * ratio;
-        player.worldY += dy * ratio;
-
-        socket.emit('movementCorrected', {
-            worldX: player.worldX,
-            worldY: player.worldY
-        });
-    }
-
-    const incomingCurrentDistance = safeNumber(data.currentDistance, player.currentDistance);
-    player.currentDistance = clamp(
-        incomingCurrentDistance,
-        GAME_CONFIG.defendDistance,
-        GAME_CONFIG.attackDistance
-    );
-
-    const incomingRotation = safeNumber(data.rotationAngle, player.rotationAngle);
-    const maxRotationDelta = GAME_CONFIG.maxRotationSpeedPerSec * (elapsed / 1000);
-    player.rotationAngle = clampAngleChange(player.rotationAngle, incomingRotation, maxRotationDelta);
-
-    const incomingFacing = safeNumber(data.facingAngle, player.facingAngle);
-    player.facingAngle = clampAngleChange(
-        player.facingAngle,
-        incomingFacing,
-        GAME_CONFIG.maxFacingJumpPerUpdate
-    );
-
-    player.attackBlend = clamp(
-        safeNumber(data.attackBlend, player.attackBlend),
-        GAME_CONFIG.blendMin,
-        GAME_CONFIG.blendMax
-    );
-
-    player.defendBlend = clamp(
-        safeNumber(data.defendBlend, player.defendBlend),
-        GAME_CONFIG.blendMin,
-        GAME_CONFIG.blendMax
-    );
-}
-
-// 定时清理过期 session
-cleanupExpiredSessions();
-setInterval(cleanupExpiredSessions, 1000 * 60 * 30);
-
-// ================= 账号接口 =================
-
-// 注册
-app.post('/api/register', (req, res) => {
-    const username = String(req.body?.username || '').trim();
-    const password = String(req.body?.password || '').trim();
-
-    if (!isValidUsername(username)) {
-        return res.json({
-            success: false,
-            message: '用户名需为3-15位，只能包含中文、字母、数字、下划线'
-        });
-    }
-
-    if (!isValidPassword(password)) {
-        return res.json({
-            success: false,
-            message: '密码需为5-15位，且必须包含字母和数字'
-        });
-    }
-
-    db.get('SELECT id FROM users WHERE username = ?', [username], async (err, row) => {
-        if (err) {
-            console.error('查询用户失败:', err);
-            return res.json({ success: false, message: '服务器错误' });
-        }
-
-        if (row) {
-            return res.json({ success: false, message: '已有该用户名' });
-        }
-
-        try {
-            const passwordHash = await bcrypt.hash(password, 10);
-
-            db.run(
-                'INSERT INTO users (username, password_hash) VALUES (?, ?)',
-                [username, passwordHash],
-                function(insertErr) {
-                    if (insertErr) {
-                        console.error('注册失败:', insertErr);
-                        return res.json({ success: false, message: '注册失败，请稍后重试' });
-                    }
-
-                    return res.json({
-                        success: true,
-                        message: '注册成功，请登录'
-                    });
-                }
-            );
-        } catch (e) {
-            console.error('密码加密失败:', e);
-            return res.json({ success: false, message: '服务器错误' });
-        }
-    });
-});
-
-// 登录
-app.post('/api/login', (req, res) => {
-    const username = String(req.body?.username || '').trim();
-    const password = String(req.body?.password || '').trim();
-
-    if (!username || !password) {
-        return res.json({ success: false, message: '用户名和密码不能为空' });
-    }
-
-    db.get('SELECT * FROM users WHERE username = ?', [username], async (err, row) => {
-        if (err) {
-            console.error('登录查询失败:', err);
-            return res.json({ success: false, message: '服务器错误' });
-        }
-
-        if (!row) {
-            return res.json({ success: false, message: '无此账号，请先注册' });
-        }
-
-        try {
-            const ok = await bcrypt.compare(password, row.password_hash);
-
-            if (!ok) {
-                return res.json({ success: false, message: '密码错误' });
-            }
-
-            req.session.user = {
-                id: row.id,
-                username: row.username
-            };
-            req.session.loginAt = Date.now();
-
-            req.session.save(async (saveErr) => {
-                if (saveErr) {
-                    console.error('Session 保存失败:', saveErr);
-                    return res.json({ success: false, message: '登录失败，请稍后重试' });
-                }
-
-                await destroyOtherSessionsOfUsername(row.username, req.sessionID);
-                kickUserSocket(row.username, '你的账号已在其他地方登录');
-
-                return res.json({
-                    success: true,
-                    message: '登录成功',
-                    username: row.username
-                });
-            });
-        } catch (e) {
-            console.error('密码校验失败:', e);
-            return res.json({ success: false, message: '服务器错误' });
-        }
-    });
-});
-
-// 当前登录状态
 app.get('/api/me', (req, res) => {
-    if (!req.session.user) {
+    if (req.session?.userId && req.session?.username) {
         return res.json({
-            success: false,
-            loggedIn: false
+            loggedIn: true,
+            username: req.session.username
         });
     }
-
     return res.json({
-        success: true,
-        loggedIn: true,
-        username: req.session.user.username
+        loggedIn: false
     });
 });
 
-// 退出登录
-app.post('/api/logout', (req, res) => {
-    const username = req.session?.user?.username || null;
+app.post('/api/register', async (req, res) => {
+    try {
+        const username = String(req.body?.username || '').trim();
+        const password = String(req.body?.password || '').trim();
 
-    if (username) {
-        kickUserSocket(username, '你已退出登录');
-    }
-
-    req.session.destroy((err) => {
-        if (err) {
-            console.error('退出登录失败:', err);
-            return res.json({ success: false, message: '退出登录失败' });
-        }
-
-        res.clearCookie('florr.sid');
-        return res.json({ success: true, message: '已退出登录' });
-    });
-});
-
-// ================= 游戏逻辑 =================
-io.on('connection', (socket) => {
-    const sessionData = socket.request.session;
-    const sessionUser = sessionData?.user;
-    const username = sessionUser?.username;
-
-    if (!username) {
-        console.log(`⛔ 未登录 socket 连接已拒绝: ${socket.id}`);
-        socket.disconnect(true);
-        return;
-    }
-
-    const existingSocketId = activeUserSockets.get(username);
-
-    if (existingSocketId && existingSocketId !== socket.id) {
-        delete players[existingSocketId];
-
-        const oldSocket = io.sockets.sockets.get(existingSocketId);
-        if (oldSocket) {
-            oldSocket.emit('sessionReplaced', {
-                message: '你的账号已在其他地方重新连接'
+        if (!isValidUsername(username)) {
+            return res.json({
+                success: false,
+                message: '用户名不合法'
             });
-            oldSocket.disconnect(true);
         }
 
-        activeUserSockets.delete(username);
+        if (!isValidPassword(password)) {
+            return res.json({
+                success: false,
+                message: '密码不合法，需5-15位且同时包含字母和数字'
+            });
+        }
+
+        const exists = await User.findOne({ username }).lean();
+        if (exists) {
+            return res.json({
+                success: false,
+                message: '用户名已存在'
+            });
+        }
+
+        const passwordHash = await bcrypt.hash(password, 10);
+
+        await User.create({
+            username,
+            passwordHash,
+            playerData: {
+                inventory: [],
+                loadout: [
+                    { petalId: 1, rarity: 0, name: 'Basic' },
+                    { petalId: 1, rarity: 0, name: 'Basic' },
+                    { petalId: 1, rarity: 0, name: 'Basic' },
+                    { petalId: 1, rarity: 0, name: 'Basic' },
+                    { petalId: 1, rarity: 0, name: 'Basic' }
+                ]
+            }
+        });
+
+        return res.json({
+            success: true,
+            message: '注册成功，请登录'
+        });
+    } catch (err) {
+        console.error('/api/register error:', err);
+        return res.status(500).json({
+            success: false,
+            message: '服务器错误'
+        });
     }
-
-    activeUserSockets.set(username, socket.id);
-    socket.data.username = username;
-
-    console.log(`🌸 玩家加入: ${socket.id}, 用户名: ${username}`);
-
-    resetPlayerOfSocket(socket.id, username);
-
-    socket.emit('movementCorrected', {
-        worldX: players[socket.id].worldX,
-        worldY: players[socket.id].worldY
-    });
-
-    socket.on('playerUpdate', (data) => {
-        const p = players[socket.id];
-        if (!p || typeof data !== 'object' || !data) return;
-
-        applyMovementAntiCheat(p, data, socket);
-    });
-
-    socket.on('disconnect', (reason) => {
-        console.log(`🥀 玩家离开: ${socket.id}, reason: ${reason}`);
-
-        delete players[socket.id];
-
-        if (activeUserSockets.get(username) === socket.id) {
-            activeUserSockets.delete(username);
-        }
-    });
 });
 
-// 广播游戏状态
-setInterval(() => {
-    const sanitizedPlayers = {};
-    for (const id in players) {
-        sanitizedPlayers[id] = publicUserData(players[id]);
-    }
-    io.emit('gameState', sanitizedPlayers);
-}, 1000 / 60);
+app.post('/api/login', async (req, res) => {
+    try {
+        const username = String(req.body?.username || '').trim();
+        const password = String(req.body?.password || '').trim();
 
-const PORT = process.env.PORT || 3000;
+        const user = await User.findOne({ username });
+        if (!user) {
+            return res.json({
+                success: false,
+                message: '用户名或密码错误'
+            });
+        }
+
+        const ok = await bcrypt.compare(password, user.passwordHash);
+        if (!ok) {
+            return res.json({
+                success: false,
+                message: '用户名或密码错误'
+            });
+        }
+
+        req.session.userId = String(user._id);
+        req.session.username = user.username;
+
+        await new Promise((resolve, reject) => {
+            req.session.save(err => err ? reject(err) : resolve());
+        });
+
+        const oldSocketId = userToSocketId.get(user.username);
+        if (oldSocketId && io.sockets.sockets.get(oldSocketId)) {
+            io.to(oldSocketId).emit('sessionReplaced', {
+                message: '你的账号已在其他地方登录'
+            });
+            const oldSocket = io.sockets.sockets.get(oldSocketId);
+            if (oldSocket) {
+                oldSocket.disconnect(true);
+            }
+        }
+
+        return res.json({
+            success: true,
+            message: '登录成功',
+            username: user.username
+        });
+    } catch (err) {
+        console.error('/api/login error:', err);
+        return res.status(500).json({
+            success: false,
+            message: '服务器错误'
+        });
+    }
+});
+
+app.post('/api/logout', requireLogin, async (req, res) => {
+    try {
+        const username = req.session.username;
+        const socketId = userToSocketId.get(username);
+
+        if (socketId) {
+            const sock = io.sockets.sockets.get(socketId);
+            if (sock) sock.disconnect(true);
+            userToSocketId.delete(username);
+        }
+
+        req.session.destroy(err => {
+            if (err) {
+                console.error('/api/logout destroy error:', err);
+                return res.status(500).json({
+                    success: false,
+                    message: '退出失败'
+                });
+            }
+
+            res.clearCookie('myflorr.sid');
+            return res.json({
+                success: true,
+                message: '已退出登录'
+            });
+        });
+    } catch (err) {
+        console.error('/api/logout error:', err);
+        return res.status(500).json({
+            success: false,
+            message: '服务器错误'
+        });
+    }
+});
+
+app.get('/api/player-data', requireLogin, async (req, res) => {
+    try {
+        const user = await User.findById(req.session.userId).lean();
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: '用户不存在'
+            });
+        }
+
+        const playerData = user.playerData || {};
+        return res.json({
+            success: true,
+            data: {
+                inventory: normalizeInventory(playerData.inventory),
+                loadout: normalizeLoadout(playerData.loadout)
+            }
+        });
+    } catch (err) {
+        console.error('/api/player-data GET error:', err);
+        return res.status(500).json({
+            success: false,
+            message: '服务器错误'
+        });
+    }
+});
+
+app.post('/api/player-data', requireLogin, async (req, res) => {
+    try {
+        const inventory = normalizeInventory(req.body?.inventory);
+        const loadout = normalizeLoadout(req.body?.loadout);
+
+        await User.findByIdAndUpdate(req.session.userId, {
+            $set: {
+                'playerData.inventory': inventory,
+                'playerData.loadout': loadout
+            }
+        });
+
+        return res.json({
+            success: true
+        });
+    } catch (err) {
+        console.error('/api/player-data POST error:', err);
+        return res.status(500).json({
+            success: false,
+            message: '保存失败'
+        });
+    }
+});
+
+io.on('connection', async (socket) => {
+    try {
+        const req = socket.request;
+        const session = req.session;
+
+        if (!session?.userId || !session?.username) {
+            socket.disconnect(true);
+            return;
+        }
+
+        const username = session.username;
+
+        const oldSocketId = userToSocketId.get(username);
+        if (oldSocketId && oldSocketId !== socket.id) {
+            const oldSocket = io.sockets.sockets.get(oldSocketId);
+            if (oldSocket) {
+                oldSocket.emit('sessionReplaced', {
+                    message: '你的账号已在其他地方登录'
+                });
+                oldSocket.disconnect(true);
+            }
+        }
+
+        userToSocketId.set(username, socket.id);
+
+        const user = await User.findById(session.userId).lean();
+        const savedLoadout = normalizeLoadout(user?.playerData?.loadout);
+        const petalCount = savedLoadout.filter(Boolean).length;
+
+        onlinePlayers[socket.id] = {
+            userId: String(session.userId),
+            username,
+            worldX: 0,
+            worldY: 0,
+            currentDistance: 45,
+            rotationAngle: 0,
+            facingAngle: 0,
+            attackBlend: 0,
+            defendBlend: 0,
+            petalCount,
+            loadout: savedLoadout
+        };
+
+        broadcastGameState();
+
+        socket.on('playerUpdate', (data) => {
+            const p = onlinePlayers[socket.id];
+            if (!p) return;
+
+            if (typeof data.worldX === 'number') p.worldX = data.worldX;
+            if (typeof data.worldY === 'number') p.worldY = data.worldY;
+            if (typeof data.currentDistance === 'number') p.currentDistance = data.currentDistance;
+            if (typeof data.rotationAngle === 'number') p.rotationAngle = data.rotationAngle;
+            if (typeof data.facingAngle === 'number') p.facingAngle = data.facingAngle;
+            if (typeof data.attackBlend === 'number') p.attackBlend = data.attackBlend;
+            if (typeof data.defendBlend === 'number') p.defendBlend = data.defendBlend;
+            if (typeof data.petalCount === 'number') p.petalCount = data.petalCount;
+            if (Array.isArray(data.loadout)) p.loadout = normalizeLoadout(data.loadout);
+
+            socket.emit('movementCorrected', {
+                worldX: p.worldX,
+                worldY: p.worldY
+            });
+        });
+
+        socket.on('disconnect', () => {
+            const player = onlinePlayers[socket.id];
+            if (player) {
+                if (userToSocketId.get(player.username) === socket.id) {
+                    userToSocketId.delete(player.username);
+                }
+            }
+
+            delete onlinePlayers[socket.id];
+            broadcastGameState();
+        });
+    } catch (err) {
+        console.error('socket connection error:', err);
+        socket.disconnect(true);
+    }
+});
+
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
 server.listen(PORT, () => {
-    console.log(`游戏服务器已启动！监听端口: ${PORT}`);
-    console.log(`访问地址: http://localhost:${PORT}`);
+    console.log(`Server listening on port ${PORT}`);
 });

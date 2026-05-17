@@ -128,6 +128,7 @@
 
         #loginBtn { background: var(--green); }
         #loginBtn:hover { background: var(--green-hover); }
+
         #registerBtn { background: var(--blue); }
         #registerBtn:hover { background: var(--blue-hover); }
 
@@ -260,11 +261,11 @@
             <p class="auth-subtitle">登录或注册后进入花瓣世界</p>
 
             <label for="usernameInput">用户名</label>
-            <input id="usernameInput" class="textInput" type="text" maxlength="15" placeholder="请输入用户名">
+            <input id="usernameInput" class="textInput" type="text" maxlength="15" placeholder="请输入用户名" autocomplete="username" spellcheck="false">
             <div class="auth-hint">3-15位，只能包含中文、字母、数字、下划线</div>
 
             <label for="passwordInput">密码</label>
-            <input id="passwordInput" class="textInput" type="password" maxlength="15" placeholder="请输入密码">
+            <input id="passwordInput" class="textInput" type="password" maxlength="15" placeholder="请输入密码" autocomplete="current-password" spellcheck="false">
             <div class="auth-hint">5-15位，必须同时包含字母和数字</div>
 
             <div class="auth-actions">
@@ -277,7 +278,7 @@
     </div>
 
     <canvas id="gameCanvas"></canvas>
-    <div id="wasmStatus">WASM 花瓣：初始化中...</div>
+    <div id="wasmStatus">WASM 花瓣：未启动</div>
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
@@ -321,6 +322,8 @@
         let remoteLogoutHandled = false;
         let hadConnectedBefore = false;
         let reconnecting = false;
+        let wasmInitStarted = false;
+        let wasmInitPromise = null;
 
         let logicalWidth = window.innerWidth;
         let logicalHeight = window.innerHeight;
@@ -333,6 +336,14 @@
         function setConnectionStatus(text, type) {
             connectionStatus.textContent = text;
             connectionStatusCard.className = `top-card status-${type}`;
+        }
+
+        function focusAuthInputs() {
+            setTimeout(() => {
+                if (authPanel.style.display !== 'none') {
+                    usernameInput.focus();
+                }
+            }, 50);
         }
 
         async function fetchJSON(url, options = {}) {
@@ -424,6 +435,40 @@
             player.petalCount = loadoutState.slots.filter(Boolean).length;
         }
 
+        function applyPlayerData(data) {
+            const inv = Array.isArray(data?.inventory) ? data.inventory : [];
+            const loadout = Array.isArray(data?.loadout) ? data.loadout : [];
+
+            player.inventory = inv.map(clonePetalItem);
+
+            loadoutState.slots = Array.from({ length: 5 }, (_, i) => {
+                const item = loadout[i];
+                return item ? clonePetalItem(item) : null;
+            });
+
+            while (loadoutState.slots.length < 5) loadoutState.slots.push(null);
+            syncPetalCountFromLoadout();
+        }
+
+        function serializePlayerData() {
+            return {
+                inventory: player.inventory.map(clonePetalItem),
+                loadout: loadoutState.slots.map(item => item ? clonePetalItem(item) : null)
+            };
+        }
+
+        async function savePlayerData() {
+            if (!loggedIn) return;
+            try {
+                await fetchJSON('/api/player-data', {
+                    method: 'POST',
+                    body: JSON.stringify(serializePlayerData())
+                });
+            } catch (err) {
+                console.error('保存玩家数据失败:', err);
+            }
+        }
+
         function resetPlayerState() {
             player.worldX = 0;
             player.worldY = 0;
@@ -461,6 +506,7 @@
             topBar.style.display = 'none';
             loggedIn = false;
             otherPlayers = {};
+            focusAuthInputs();
         }
 
         function hideAuthPanel() {
@@ -468,12 +514,33 @@
             topBar.style.display = 'flex';
         }
 
-        function onLoginSuccess(username) {
+        function setWasmStatus(text) {
+            wasmStatus.textContent = text;
+        }
+
+        async function ensureWasmStarted() {
+            if (wasmInitStarted) return wasmInitPromise;
+            wasmInitStarted = true;
+            wasmInitPromise = initWasm();
+            return wasmInitPromise;
+        }
+
+        async function loadPlayerDataFromServer() {
+            const result = await fetchJSON('/api/player-data', { method: 'GET' });
+            if (result.success) {
+                applyPlayerData(result.data);
+            }
+        }
+
+        async function onLoginSuccess(username) {
             remoteLogoutHandled = false;
             currentUsername = username;
             loggedIn = true;
             welcomeText.textContent = `欢迎：${username}`;
             hideAuthPanel();
+
+            await ensureWasmStarted();
+            await loadPlayerDataFromServer();
             connectSocket();
         }
 
@@ -561,6 +628,7 @@
             socket.on('connect_error', async () => {
                 reconnecting = true;
                 setConnectionStatus('连接中', 'connecting');
+
                 try {
                     const result = await fetchJSON('/api/me', { method: 'GET' });
                     if (!result.loggedIn) {
@@ -605,7 +673,7 @@
                 loadingMask.style.display = 'none';
 
                 if (result.loggedIn && result.username) {
-                    onLoginSuccess(result.username);
+                    await onLoginSuccess(result.username);
                 } else {
                     showAuthPanel();
                     setConnectionStatus('已断开', 'disconnected');
@@ -645,7 +713,7 @@
 
                 setAuthMessage(result.message, '#86efac');
                 passwordInput.value = '';
-                onLoginSuccess(result.username);
+                await onLoginSuccess(result.username);
             } catch (err) {
                 console.error(err);
                 setAuthMessage('登录请求失败', '#fca5a5');
@@ -691,6 +759,7 @@
         }
 
         async function handleLogout() {
+            await savePlayerData();
             disconnectSocket();
 
             try {
@@ -727,10 +796,16 @@
             e.stopPropagation();
             if (e.key === 'Enter') handleLogin();
         });
-        usernameInput.addEventListener('keypress', (e) => e.stopPropagation());
-        passwordInput.addEventListener('keypress', (e) => e.stopPropagation());
-        usernameInput.addEventListener('keyup', (e) => e.stopPropagation());
-        passwordInput.addEventListener('keyup', (e) => e.stopPropagation());
+
+        [
+            'keydown', 'keypress', 'keyup',
+            'input', 'beforeinput',
+            'paste', 'copy', 'cut',
+            'compositionstart', 'compositionupdate', 'compositionend'
+        ].forEach(type => {
+            usernameInput.addEventListener(type, e => e.stopPropagation(), true);
+            passwordInput.addEventListener(type, e => e.stopPropagation(), true);
+        });
 
         function resizeCanvas() {
             logicalWidth = window.innerWidth;
@@ -916,8 +991,9 @@
             return true;
         }
 
-        function finishDragCleanup() {
+        async function finishDragCleanup() {
             const reopen = dragState.reopenInventoryAfterDrop;
+
             dragState.active = false;
             dragState.source = null;
             dragState.item = null;
@@ -930,15 +1006,17 @@
             if (reopen) {
                 inventoryState.open = true;
             }
-        }
 
-        function stopDraggingToInventory() {
-            if (dragState.item) addInventoryItem(dragState.item);
-            finishDragCleanup();
             syncPetalCountFromLoadout();
+            await savePlayerData();
         }
 
-        function stopDraggingToSlot(slotIndex) {
+        async function stopDraggingToInventory() {
+            if (dragState.item) addInventoryItem(dragState.item);
+            await finishDragCleanup();
+        }
+
+        async function stopDraggingToSlot(slotIndex) {
             if (!dragState.item) return;
 
             if (loadoutState.slots[slotIndex]) {
@@ -946,8 +1024,7 @@
             }
 
             loadoutState.slots[slotIndex] = clonePetalItem(dragState.item);
-            finishDragCleanup();
-            syncPetalCountFromLoadout();
+            await finishDragCleanup();
         }
 
         resizeCanvas();
@@ -987,6 +1064,25 @@
                 player.targetDefendBlend = 0;
             }
         }
+
+        window.addEventListener('keydown', (e) => {
+            const tag = (document.activeElement && document.activeElement.tagName) || '';
+            const isTyping =
+                tag === 'INPUT' ||
+                tag === 'TEXTAREA' ||
+                document.activeElement?.isContentEditable;
+
+            if (isTyping) return;
+
+            if (!loggedIn) return;
+
+            if (e.key === 'z' || e.key === 'Z') {
+                if (dragState.active) return;
+                inventoryState.open = !inventoryState.open;
+                e.preventDefault();
+                e.stopPropagation();
+            }
+        }, true);
 
         window.addEventListener('mousedown', (e) => {
             if (!loggedIn) return;
@@ -1034,16 +1130,16 @@
             updateStance();
         });
 
-        window.addEventListener('mouseup', (e) => {
+        window.addEventListener('mouseup', async (e) => {
             if (!loggedIn) return;
 
             if (e.button === 0) {
                 if (dragState.active) {
                     const slotIndex = getSlotIndexAtPoint(e.clientX, e.clientY);
                     if (slotIndex !== -1) {
-                        stopDraggingToSlot(slotIndex);
+                        await stopDraggingToSlot(slotIndex);
                     } else {
-                        stopDraggingToInventory();
+                        await stopDraggingToInventory();
                     }
                     return;
                 }
@@ -1205,47 +1301,6 @@
             });
         }
 
-        function drawDraggedPureCard() {
-            if (!dragState.active || !dragState.item) return;
-
-            const w = 108;
-            const h = 140;
-
-            ctx.save();
-            ctx.translate(dragState.pointerX, dragState.pointerY);
-            ctx.rotate(dragState.angle);
-            ctx.translate(-w / 2, -h / 2);
-
-            ctx.fillStyle = 'rgba(15, 23, 42, 0.98)';
-            ctx.strokeStyle = 'rgba(255,255,255,0.16)';
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.roundRect(0, 0, w, h, 14);
-            ctx.fill();
-            ctx.stroke();
-
-            drawWasmPetal(
-                ctx,
-                w / 2,
-                48,
-                [128, dragState.item.petalId, dragState.item.rarity, 1],
-                64,
-                false
-            );
-
-            ctx.fillStyle = '#f8fafc';
-            ctx.font = 'bold 14px Arial';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(dragState.item.name || 'Basic', w / 2, 104, w - 12);
-
-            ctx.fillStyle = '#cbd5e1';
-            ctx.font = '12px Arial';
-            ctx.fillText(getRarityName(dragState.item.rarity), w / 2, 122, w - 12);
-
-            ctx.restore();
-        }
-
         function drawInventoryPanel() {
             if (!inventoryState.open) return;
 
@@ -1321,10 +1376,6 @@
 
         window.__trackedCanvases = [];
         window.__wasmReady = false;
-
-        function setWasmStatus(text) {
-            wasmStatus.textContent = text;
-        }
 
         function sleep(ms) {
             return new Promise(resolve => setTimeout(resolve, ms));
@@ -1419,11 +1470,13 @@
         function markWasmReady(source) {
             if (window.__wasmReady) return;
             window.__wasmReady = true;
+            console.log('WASM 初始化完成, source =', source);
             setWasmStatus('WASM 花瓣：已就绪');
             if (window.__wasmReadyPoll) {
                 clearInterval(window.__wasmReadyPoll);
                 window.__wasmReadyPoll = null;
             }
+
             preloadWasmPetal([128, 1, 0, 1]).catch(console.error);
             preloadWasmPetal([128, 1, 0, 2]).catch(console.error);
         }
@@ -1534,6 +1587,7 @@
 
             const after = getTrackedCanvasSnapshot();
             const sourceCanvas = pickBestCanvas(before, after, startedAt);
+
             if (!sourceCanvas) throw new Error('没找到 wasm 实际绘制的 canvas');
 
             const copy = document.createElement('canvas');
@@ -1598,6 +1652,27 @@
             return false;
         }
 
+        function drawRawDraggedWasmCard() {
+            if (!dragState.active || !dragState.item) return;
+
+            const size = 118;
+
+            ctx.save();
+            ctx.translate(dragState.pointerX, dragState.pointerY);
+            ctx.rotate(dragState.angle);
+
+            drawWasmPetal(
+                ctx,
+                0,
+                0,
+                [128, dragState.item.petalId, dragState.item.rarity, 1],
+                size,
+                false
+            );
+
+            ctx.restore();
+        }
+
         function getEquippedPetals() {
             return loadoutState.slots.filter(Boolean);
         }
@@ -1605,7 +1680,9 @@
         function drawPlayer(x, y, pData, isMe) {
             const petals = isMe
                 ? getEquippedPetals()
-                : Array.from({ length: pData.petalCount || 0 }, () => makePetalCard(1, 0));
+                : Array.isArray(pData.loadout) && pData.loadout.length
+                    ? pData.loadout.filter(Boolean)
+                    : Array.from({ length: pData.petalCount || 0 }, () => makePetalCard(1, 0));
 
             for (let i = 0; i < petals.length; i++) {
                 const petal = petals[i];
@@ -1713,7 +1790,9 @@
                         rotationAngle: player.rotationAngle,
                         facingAngle: player.facingAngle,
                         attackBlend: player.attackBlend,
-                        defendBlend: player.defendBlend
+                        defendBlend: player.defendBlend,
+                        petalCount: player.petalCount,
+                        loadout: loadoutState.slots.map(item => item ? clonePetalItem(item) : null)
                     });
                 }
 
@@ -1752,7 +1831,8 @@
                         drawPlayer(player.screenX, player.screenY, {
                             ...player,
                             username: currentUsername,
-                            petalCount: player.petalCount
+                            petalCount: player.petalCount,
+                            loadout: loadoutState.slots
                         }, true);
                     } else {
                         if (p.username === currentUsername) continue;
@@ -1772,7 +1852,7 @@
                 drawLoadoutSlots();
                 drawInventoryButton();
                 drawInventoryPanel();
-                drawDraggedPureCard();
+                drawRawDraggedWasmCard();
             } else {
                 ctx.save();
                 ctx.fillStyle = 'rgba(0,0,0,0.15)';
@@ -1816,7 +1896,6 @@
 
         resetPlayerState();
         checkLoginStatus();
-        initWasm();
         gameLoop();
     </script>
 </body>
