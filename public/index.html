@@ -319,6 +319,7 @@
         let loggedIn = false;
         let currentUsername = '';
         let otherPlayers = {};
+        let remoteRenderPlayers = {};
         let remoteLogoutHandled = false;
         let hadConnectedBefore = false;
         let reconnecting = false;
@@ -499,6 +500,7 @@
             mouseState.left = false;
             mouseState.right = false;
             otherPlayers = {};
+            remoteRenderPlayers = {};
         }
 
         function showAuthPanel() {
@@ -506,6 +508,7 @@
             topBar.style.display = 'none';
             loggedIn = false;
             otherPlayers = {};
+            remoteRenderPlayers = {};
             focusAuthInputs();
         }
 
@@ -588,6 +591,7 @@
 
             socket.on('connect', () => {
                 otherPlayers = {};
+                remoteRenderPlayers = {};
                 remoteLogoutHandled = false;
 
                 if (hadConnectedBefore || reconnecting) {
@@ -613,6 +617,35 @@
                     player.attackBlend = Number(me.attackBlend) || 0;
                     player.defendBlend = Number(me.defendBlend) || 0;
                 }
+
+                const nextRemoteRenderPlayers = {};
+
+                for (const id in otherPlayers) {
+                    if (!otherPlayers[id]) continue;
+                    if (socket && id === socket.id) continue;
+
+                    const p = otherPlayers[id];
+                    const old = remoteRenderPlayers[id];
+
+                    nextRemoteRenderPlayers[id] = {
+                        username: p.username,
+                        loadout: Array.isArray(p.loadout) ? p.loadout : [],
+                        petalCount: Number(p.petalCount) || 0,
+
+                        targetWorldX: Number(p.worldX) || 0,
+                        targetWorldY: Number(p.worldY) || 0,
+                        renderWorldX: old ? old.renderWorldX : (Number(p.worldX) || 0),
+                        renderWorldY: old ? old.renderWorldY : (Number(p.worldY) || 0),
+
+                        currentDistance: Number(p.currentDistance) || 45,
+                        rotationAngle: Number(p.rotationAngle) || 0,
+                        facingAngle: Number(p.facingAngle) || 0,
+                        attackBlend: Number(p.attackBlend) || 0,
+                        defendBlend: Number(p.defendBlend) || 0
+                    };
+                }
+
+                remoteRenderPlayers = nextRemoteRenderPlayers;
             });
 
             socket.on('sessionReplaced', async (data) => {
@@ -1078,7 +1111,6 @@
                 document.activeElement?.isContentEditable;
 
             if (isTyping) return;
-
             if (!loggedIn) return;
 
             if (e.key === 'z' || e.key === 'Z') {
@@ -1787,6 +1819,14 @@
                     });
                 }
 
+                for (const id in remoteRenderPlayers) {
+                    const rp = remoteRenderPlayers[id];
+                    if (!rp) continue;
+
+                    rp.renderWorldX += (rp.targetWorldX - rp.renderWorldX) * 0.25;
+                    rp.renderWorldY += (rp.targetWorldY - rp.renderWorldY) * 0.25;
+                }
+
                 drawGrid();
 
                 if (dist > 10) {
@@ -1814,22 +1854,21 @@
                     ctx.restore();
                 }
 
-                for (let id in otherPlayers) {
-                    const p = otherPlayers[id];
+                if (socket) {
+                    drawPlayer(player.screenX, player.screenY, {
+                        ...player,
+                        username: currentUsername,
+                        petalCount: loadoutState.slots.filter(Boolean).length,
+                        loadout: loadoutState.slots
+                    }, true);
+                }
+
+                for (let id in remoteRenderPlayers) {
+                    const p = remoteRenderPlayers[id];
                     if (!p) continue;
 
-                    if (socket && id === socket.id) {
-                        drawPlayer(player.screenX, player.screenY, {
-                            ...player,
-                            username: currentUsername,
-                            petalCount: loadoutState.slots.filter(Boolean).length,
-                            loadout: loadoutState.slots
-                        }, true);
-                        continue;
-                    }
-
-                    const drawX = player.screenX + (p.worldX - player.worldX);
-                    const drawY = player.screenY + (p.worldY - player.worldY);
+                    const drawX = player.screenX + (p.renderWorldX - player.worldX);
+                    const drawY = player.screenY + (p.renderWorldY - player.worldY);
 
                     if (
                         drawX > -100 && drawX < logicalWidth + 100 &&
