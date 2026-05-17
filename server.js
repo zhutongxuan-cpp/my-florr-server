@@ -17,7 +17,7 @@ const activeUserSockets = new Map(); // username -> socket.id
 
 // ================= 数据库 =================
 const db = new sqlite3.Database('./users.db');
-const sessionDb = new sqlite3.Database('./sessions.db');
+const sessionsDb = new sqlite3.Database('./sessions.db');
 
 db.serialize(() => {
     db.run(`
@@ -30,10 +30,10 @@ db.serialize(() => {
 });
 
 // ================= 中间件 =================
-app.use(express.json());
-app.use(express.static('public'));
-
 app.set('trust proxy', 1);
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(express.static('public'));
 
 const sessionStore = new SQLiteStore({
     db: 'sessions.db',
@@ -41,6 +41,8 @@ const sessionStore = new SQLiteStore({
     table: 'sessions',
     concurrentDB: true
 });
+
+const isProduction = process.env.NODE_ENV === 'production';
 
 const sessionMiddleware = session({
     store: sessionStore,
@@ -52,7 +54,7 @@ const sessionMiddleware = session({
     cookie: {
         httpOnly: true,
         sameSite: 'lax',
-        secure: false, // 上 HTTPS 后改成 true
+        secure: isProduction,
         maxAge: 1000 * 60 * 60 * 24 * 7
     }
 });
@@ -68,12 +70,12 @@ const GAME_CONFIG = {
     normalDistance: 45,
     attackDistance: 90,
     defendDistance: 36,
-    maxMoveSpeed: 6,              // 与前端正常速度一致
-    maxMoveDtMs: 120,             // 限制一次更新最多按 120ms 算，避免长时间卡顿后瞬移
-    graceExtraDistance: 4,        // 给一点误差，减少误判
-    minUpdateIntervalMs: 8,       // 太高频也不需要
-    maxWorldCoordAbs: 1000000,    // 防止极端脏数据
-    maxRotationSpeedPerSec: 8,    // 限制旋转速度
+    maxMoveSpeed: 6,
+    maxMoveDtMs: 120,
+    graceExtraDistance: 4,
+    minUpdateIntervalMs: 8,
+    maxWorldCoordAbs: 1000000,
+    maxRotationSpeedPerSec: 8,
     maxFacingJumpPerUpdate: Math.PI,
     blendMin: 0,
     blendMax: 1
@@ -103,7 +105,7 @@ function publicUserData(player) {
 }
 
 function cleanupExpiredSessions() {
-    sessionDb.run(
+    sessionsDb.run(
         'DELETE FROM sessions WHERE expired < ?',
         [Date.now()],
         (err) => {
@@ -176,10 +178,6 @@ function kickUserSocket(username, message = '你的账号已在其他地方登�
 
 function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
-}
-
-function isFiniteNumber(value) {
-    return typeof value === 'number' && Number.isFinite(value);
 }
 
 function safeNumber(value, fallback = 0) {
@@ -498,4 +496,5 @@ setInterval(() => {
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`游戏服务器已启动！监听端口: ${PORT}`);
+    console.log(`访问地址: http://localhost:${PORT}`);
 });

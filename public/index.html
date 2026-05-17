@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
@@ -145,21 +145,10 @@
             transform: none;
         }
 
-        #loginBtn {
-            background: var(--green);
-        }
-
-        #loginBtn:hover {
-            background: var(--green-hover);
-        }
-
-        #registerBtn {
-            background: var(--blue);
-        }
-
-        #registerBtn:hover {
-            background: var(--blue-hover);
-        }
+        #loginBtn { background: var(--green); }
+        #loginBtn:hover { background: var(--green-hover); }
+        #registerBtn { background: var(--blue); }
+        #registerBtn:hover { background: var(--blue-hover); }
 
         #authMessage {
             min-height: 24px;
@@ -309,9 +298,7 @@
     <div id="authPanel">
         <div class="auth-box">
             <h1 class="auth-title">My Florr.io</h1>
-            <p class="auth-subtitle">
-                登录或注册后进入花瓣世界
-            </p>
+            <p class="auth-subtitle">登录或注册后进入花瓣世界</p>
 
             <label for="usernameInput">用户名</label>
             <input id="usernameInput" type="text" maxlength="15" placeholder="请输入用户名">
@@ -337,6 +324,23 @@
     <script>
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
+
+        if (!CanvasRenderingContext2D.prototype.roundRect) {
+            CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+                const radius = typeof r === 'number' ? r : 0;
+                this.beginPath();
+                this.moveTo(x + radius, y);
+                this.lineTo(x + w - radius, y);
+                this.quadraticCurveTo(x + w, y, x + w, y + radius);
+                this.lineTo(x + w, y + h - radius);
+                this.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
+                this.lineTo(x + radius, y + h);
+                this.quadraticCurveTo(x, y + h, x, y + h - radius);
+                this.lineTo(x, y + radius);
+                this.quadraticCurveTo(x, y, x + radius, y);
+                return this;
+            };
+        }
 
         const authPanel = document.getElementById('authPanel');
         let usernameInput = document.getElementById('usernameInput');
@@ -442,6 +446,13 @@
             }));
             inventoryState.open = false;
             inventoryState.hoverButton = false;
+            inventoryState.cardRects = [];
+            loadoutState.slots = Array(5).fill(null);
+            dragState.active = false;
+            dragState.source = null;
+            dragState.item = null;
+            dragState.count = 0;
+            dragState.hoverSlotIndex = -1;
             mouseState.left = false;
             mouseState.right = false;
             otherPlayers = {};
@@ -463,7 +474,7 @@
             remoteLogoutHandled = false;
             currentUsername = username;
             loggedIn = true;
-            welcomeText.textContent = `欢迎，${username}`;
+            welcomeText.textContent = `欢迎：${username}`;
             hideAuthPanel();
             connectSocket();
         }
@@ -511,7 +522,7 @@
             });
 
             socket.on('connect', () => {
-                console.log('Socket 已连接:', socket.id);
+                console.log('Socket 已连接', socket.id);
                 otherPlayers = {};
                 remoteLogoutHandled = false;
 
@@ -531,13 +542,8 @@
 
             socket.on('movementCorrected', (data) => {
                 if (!loggedIn || !data) return;
-
-                if (typeof data.worldX === 'number') {
-                    player.worldX = data.worldX;
-                }
-                if (typeof data.worldY === 'number') {
-                    player.worldY = data.worldY;
-                }
+                if (typeof data.worldX === 'number') player.worldX = data.worldX;
+                if (typeof data.worldY === 'number') player.worldY = data.worldY;
             });
 
             socket.on('sessionReplaced', async (data) => {
@@ -602,10 +608,7 @@
 
         async function checkLoginStatus() {
             try {
-                const result = await fetchJSON('/api/me', {
-                    method: 'GET'
-                });
-
+                const result = await fetchJSON('/api/me', { method: 'GET' });
                 loadingMask.style.display = 'none';
 
                 if (result.loggedIn && result.username) {
@@ -618,7 +621,7 @@
                 console.error(err);
                 loadingMask.style.display = 'none';
                 showAuthPanel();
-                setAuthMessage('无法连接服务器');
+                setAuthMessage('无法连接服务器', '#fca5a5');
                 setConnectionStatus('已断开', 'disconnected');
             }
         }
@@ -724,24 +727,15 @@
             showAuthPanel();
         }
 
-        loginBtn.addEventListener('click', handleLogin);
-        registerBtn.addEventListener('click', handleRegister);
+        repairAuthPanelMarkup();
+        bindAuthControls();
         logoutBtn.addEventListener('click', handleLogout);
-
-        usernameInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') handleLogin();
-        });
-
-        passwordInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') handleLogin();
-        });
 
         function resizeCanvas() {
             logicalWidth = window.innerWidth;
             logicalHeight = window.innerHeight;
 
             const dpr = window.devicePixelRatio || 1;
-
             canvas.width = Math.round(logicalWidth * dpr);
             canvas.height = Math.round(logicalHeight * dpr);
 
@@ -781,7 +775,6 @@
             screenY: 0,
             worldX: 0,
             worldY: 0,
-
             petalCount: 5,
             normalDistance: 45,
             attackDistance: 90,
@@ -791,12 +784,10 @@
             rotationAngle: 0,
             rotationSpeed: 0.05,
             facingAngle: 0,
-
             attackBlend: 0,
             defendBlend: 0,
             targetAttackBlend: 0,
             targetDefendBlend: 0,
-
             maxSpeed: 6,
             maxMouseDist: 150,
             mouseX: 0,
@@ -834,10 +825,7 @@
             hoverSlotIndex: -1
         };
 
-        const PETAL_NAME_BY_ID = {
-            1: 'Basic'
-        };
-
+        const PETAL_NAME_BY_ID = { 1: 'Basic' };
         const RARITY_NAME_BY_LEVEL = {
             0: 'Common',
             1: 'Uncommon',
@@ -855,12 +843,7 @@
         }
 
         function pointInRect(x, y, rect) {
-            return (
-                x >= rect.x &&
-                x <= rect.x + rect.width &&
-                y >= rect.y &&
-                y <= rect.y + rect.height
-            );
+            return x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height;
         }
 
         function updateInventoryLayout() {
@@ -879,13 +862,7 @@
             const panelX = Math.round((logicalWidth - panelWidth) / 2);
             const panelY = Math.round((logicalHeight - panelHeight) / 2);
             setRect(inventoryState.panelRect, panelX, panelY, panelWidth, panelHeight);
-            setRect(
-                inventoryState.closeRect,
-                panelX + panelWidth - 54,
-                panelY + 18,
-                36,
-                36
-            );
+            setRect(inventoryState.closeRect, panelX + panelWidth - 54, panelY + 18, 36, 36);
 
             const slotSize = 92;
             const slotGap = 18;
@@ -918,19 +895,12 @@
                 if (existing) {
                     existing.count += 1;
                 } else {
-                    grouped.set(key, {
-                        petalId,
-                        rarity,
-                        name,
-                        count: 1
-                    });
+                    grouped.set(key, { petalId, rarity, name, count: 1 });
                 }
             }
 
             return Array.from(grouped.values()).sort((a, b) => {
-                if (a.rarity !== b.rarity) {
-                    return a.rarity - b.rarity;
-                }
+                if (a.rarity !== b.rarity) return a.rarity - b.rarity;
                 return a.name.localeCompare(b.name, 'en', { sensitivity: 'base' });
             });
         }
@@ -969,9 +939,7 @@
 
         function getSlotIndexAtPoint(x, y) {
             for (let i = 0; i < loadoutState.slotRects.length; i++) {
-                if (pointInRect(x, y, loadoutState.slotRects[i])) {
-                    return i;
-                }
+                if (pointInRect(x, y, loadoutState.slotRects[i])) return i;
             }
             return -1;
         }
@@ -980,6 +948,9 @@
             const item = removeOneInventoryItem(entry.petalId, entry.rarity);
             if (!item) return false;
 
+            mouseState.left = false;
+            mouseState.right = false;
+            updateStance();
             dragState.active = true;
             dragState.source = 'inventory';
             dragState.item = item;
@@ -997,6 +968,9 @@
             if (!item) return false;
 
             loadoutState.slots[slotIndex] = null;
+            mouseState.left = false;
+            mouseState.right = false;
+            updateStance();
             dragState.active = true;
             dragState.source = `slot:${slotIndex}`;
             dragState.item = clonePetalItem(item);
@@ -1010,9 +984,7 @@
         }
 
         function stopDraggingToInventory() {
-            if (dragState.item) {
-                addInventoryItem(dragState.item);
-            }
+            if (dragState.item) addInventoryItem(dragState.item);
             dragState.active = false;
             dragState.source = null;
             dragState.item = null;
@@ -1022,10 +994,7 @@
 
         function stopDraggingToSlot(slotIndex) {
             if (!dragState.item) return;
-
-            if (loadoutState.slots[slotIndex]) {
-                addInventoryItem(loadoutState.slots[slotIndex]);
-            }
+            if (loadoutState.slots[slotIndex]) addInventoryItem(loadoutState.slots[slotIndex]);
             loadoutState.slots[slotIndex] = clonePetalItem(dragState.item);
             dragState.active = false;
             dragState.source = null;
@@ -1043,9 +1012,19 @@
         window.addEventListener('mousemove', (e) => {
             player.mouseX = e.clientX;
             player.mouseY = e.clientY;
+            dragState.pointerX = e.clientX;
+            dragState.pointerY = e.clientY;
+            if (dragState.active) {
+                dragState.angle += 0.05 * dragState.angleDir;
+                if (dragState.angle > 0.22 || dragState.angle < -0.22) {
+                    dragState.angleDir *= -1;
+                }
+                dragState.hoverSlotIndex = getSlotIndexAtPoint(e.clientX, e.clientY);
+            }
             inventoryState.hoverButton =
                 loggedIn &&
                 !inventoryState.open &&
+                !dragState.active &&
                 pointInRect(e.clientX, e.clientY, inventoryState.buttonRect);
         });
 
@@ -1067,9 +1046,25 @@
 
         window.addEventListener('mousedown', (e) => {
             if (!loggedIn) return;
+            if (e.button !== 0) {
+                if (e.button === 2 && !inventoryState.open && !dragState.active) {
+                    mouseState.right = true;
+                    updateStance();
+                }
+                return;
+            }
+
+            if (dragState.active) return;
+
             if (inventoryState.open) {
                 if (pointInRect(e.clientX, e.clientY, inventoryState.closeRect)) {
                     inventoryState.open = false;
+                    return;
+                }
+
+                const entry = getInventoryEntryAtPoint(e.clientX, e.clientY);
+                if (entry) {
+                    startDraggingFromInventory(entry, e.clientX, e.clientY);
                     return;
                 }
 
@@ -1081,21 +1076,46 @@
 
             if (pointInRect(e.clientX, e.clientY, inventoryState.buttonRect)) {
                 inventoryState.open = !inventoryState.open;
+                if (inventoryState.open) {
+                    mouseState.left = false;
+                    mouseState.right = false;
+                    updateStance();
+                }
                 inventoryState.hoverButton =
                     !inventoryState.open &&
                     pointInRect(e.clientX, e.clientY, inventoryState.buttonRect);
                 return;
             }
 
-            if (e.button === 0) mouseState.left = true;
-            if (e.button === 2) mouseState.right = true;
+            const slotIndex = getSlotIndexAtPoint(e.clientX, e.clientY);
+            if (slotIndex !== -1 && loadoutState.slots[slotIndex]) {
+                startDraggingFromSlot(slotIndex, e.clientX, e.clientY);
+                return;
+            }
+
+            mouseState.left = true;
             updateStance();
         });
 
         window.addEventListener('mouseup', (e) => {
             if (!loggedIn) return;
-            if (e.button === 0) mouseState.left = false;
-            if (e.button === 2) mouseState.right = false;
+
+            if (e.button === 0) {
+                if (dragState.active) {
+                    const slotIndex = getSlotIndexAtPoint(e.clientX, e.clientY);
+                    if (slotIndex !== -1) {
+                        stopDraggingToSlot(slotIndex);
+                    } else {
+                        stopDraggingToInventory();
+                    }
+                    return;
+                }
+                mouseState.left = false;
+            }
+
+            if (e.button === 2) {
+                mouseState.right = false;
+            }
             updateStance();
         });
 
@@ -1125,7 +1145,6 @@
 
         function drawUsername(x, y, username) {
             if (!username) return;
-
             ctx.save();
             ctx.font = '14px Arial';
             ctx.textAlign = 'center';
@@ -1133,7 +1152,6 @@
             ctx.lineWidth = 4;
             ctx.strokeStyle = 'rgba(0, 0, 0, 0.7)';
             ctx.fillStyle = '#ffffff';
-
             const textY = y + 40;
             ctx.strokeText(username, x, textY);
             ctx.fillText(username, x, textY);
@@ -1150,25 +1168,17 @@
             ctx.fillStyle = hovered ? 'rgba(255,255,255,0.18)' : 'rgba(12,18,29,0.54)';
             ctx.strokeStyle = hovered ? 'rgba(255,255,255,0.42)' : 'rgba(255,255,255,0.18)';
             ctx.lineWidth = 2;
-            ctx.beginPath();
             ctx.roundRect(0, 0, rect.width, rect.height, 16);
             ctx.fill();
             ctx.stroke();
 
             if (imgInventory.complete) {
                 const pad = hovered ? 8 : 10;
-                ctx.drawImage(
-                    imgInventory,
-                    pad,
-                    pad,
-                    rect.width - pad * 2,
-                    rect.height - pad * 2
-                );
+                ctx.drawImage(imgInventory, pad, pad, rect.width - pad * 2, rect.height - pad * 2);
             }
 
             if (hovered) {
                 ctx.fillStyle = 'rgba(255,255,255,0.10)';
-                ctx.beginPath();
                 ctx.roundRect(4, 4, rect.width - 8, rect.height - 8, 14);
                 ctx.fill();
             }
@@ -1183,7 +1193,6 @@
             ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
             ctx.strokeStyle = 'rgba(255,255,255,0.10)';
             ctx.lineWidth = 1.5;
-            ctx.beginPath();
             ctx.roundRect(0, 0, size, size + 46, 14);
             ctx.fill();
             ctx.stroke();
@@ -1229,12 +1238,59 @@
             ctx.restore();
         }
 
+        function drawLoadoutSlots() {
+            loadoutState.slotRects.forEach((rect, index) => {
+                const item = loadoutState.slots[index];
+                const hovered = dragState.active && dragState.hoverSlotIndex === index;
+
+                ctx.save();
+                ctx.translate(rect.x, rect.y);
+                ctx.fillStyle = hovered ? 'rgba(255,255,255,0.18)' : 'rgba(10, 15, 26, 0.72)';
+                ctx.strokeStyle = hovered ? 'rgba(250, 204, 21, 0.85)' : 'rgba(255,255,255,0.16)';
+                ctx.lineWidth = hovered ? 3 : 2;
+                ctx.roundRect(0, 0, rect.width, rect.height, 18);
+                ctx.fill();
+                ctx.stroke();
+
+                if (item) {
+                    drawWasmPetal(ctx, rect.width / 2, rect.height / 2, [96, item.petalId, item.rarity, 1], 68, false);
+                } else {
+                    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+                    ctx.setLineDash([6, 6]);
+                    ctx.roundRect(12, 12, rect.width - 24, rect.height - 24, 12);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                }
+
+                ctx.restore();
+            });
+        }
+
+        function drawDraggedCard() {
+            if (!dragState.active || !dragState.item) return;
+
+            const size = 148;
+            ctx.save();
+            ctx.translate(dragState.pointerX, dragState.pointerY);
+            ctx.rotate(dragState.angle);
+            ctx.scale(1.12, 1.12);
+            ctx.translate(-size / 2, -size / 2);
+            drawInventoryCard(0, 0, size, {
+                petalId: dragState.item.petalId,
+                rarity: dragState.item.rarity,
+                name: dragState.item.name,
+                count: 1
+            });
+            ctx.restore();
+        }
+
         function drawInventoryPanel() {
             if (!inventoryState.open) return;
 
             const panel = inventoryState.panelRect;
             const close = inventoryState.closeRect;
             const entries = getSortedInventoryEntries();
+            inventoryState.cardRects = [];
             const columns = Math.max(3, Math.floor((panel.width - 64) / 152));
             const cardWidth = Math.min(132, Math.floor((panel.width - 64 - (columns - 1) * 18) / columns));
             const cardHeight = cardWidth + 46;
@@ -1248,7 +1304,6 @@
             ctx.fillStyle = 'rgba(15, 23, 42, 0.96)';
             ctx.strokeStyle = 'rgba(255,255,255,0.10)';
             ctx.lineWidth = 2;
-            ctx.beginPath();
             ctx.roundRect(panel.x, panel.y, panel.width, panel.height, 22);
             ctx.fill();
             ctx.stroke();
@@ -1264,7 +1319,6 @@
             ctx.fillText(`Petals ${player.inventory.length}`, panel.x + 24, panel.y + 54);
 
             ctx.fillStyle = 'rgba(255,255,255,0.08)';
-            ctx.beginPath();
             ctx.roundRect(close.x, close.y, close.width, close.height, 10);
             ctx.fill();
             ctx.fillStyle = '#f8fafc';
@@ -1278,6 +1332,13 @@
                 const row = Math.floor(index / columns);
                 const cardX = startX + column * (cardWidth + 18);
                 const cardY = startY + row * (cardHeight + 18);
+                inventoryState.cardRects.push({
+                    x: cardX,
+                    y: cardY,
+                    width: cardWidth,
+                    height: cardHeight,
+                    entry
+                });
                 drawInventoryCard(cardX, cardY, cardWidth, entry);
             });
 
@@ -1394,7 +1455,7 @@
         function markWasmReady(source) {
             if (window.__wasmReady) return;
             window.__wasmReady = true;
-            console.log('WASM 初始化完成 source =', source);
+            console.log('WASM 初始化完成, source =', source);
             setWasmStatus('WASM 花瓣：已就绪');
             if (window.__wasmReadyPoll) {
                 clearInterval(window.__wasmReadyPoll);
@@ -1420,11 +1481,7 @@
 
         window.__wasmReadyPoll = setInterval(() => {
             try {
-                if (
-                    window.Module &&
-                    Module.asm &&
-                    typeof Module._Util_GeneratePetalImage === 'function'
-                ) {
+                if (window.Module && Module.asm && typeof Module._Util_GeneratePetalImage === 'function') {
                     markWasmReady('polling');
                 }
             } catch (e) {}
@@ -1496,10 +1553,7 @@
         }
 
         async function renderPetalSprite(args, waitMs = 120) {
-            if (!window.__wasmReady) {
-                throw new Error('WASM 还没初始化完成');
-            }
-
+            if (!window.__wasmReady) throw new Error('WASM 还没初始化完成');
             if (!Module || typeof Module._Util_GeneratePetalImage !== 'function') {
                 throw new Error('未找到 Module._Util_GeneratePetalImage');
             }
@@ -1546,13 +1600,8 @@
         async function getPetalSprite(args) {
             const key = makePetalKey(args);
 
-            if (petalSpriteCache.has(key)) {
-                return petalSpriteCache.get(key);
-            }
-
-            if (petalSpritePending.has(key)) {
-                return petalSpritePending.get(key);
-            }
+            if (petalSpriteCache.has(key)) return petalSpriteCache.get(key);
+            if (petalSpritePending.has(key)) return petalSpritePending.get(key);
 
             const task = renderPetalSprite(args).then(sprite => {
                 petalSpriteCache.set(key, sprite);
@@ -1611,7 +1660,6 @@
                 const angle = pData.rotationAngle + (i * (Math.PI * 2) / pData.petalCount);
                 const petalX = Math.round(x + Math.cos(angle) * pData.currentDistance);
                 const petalY = Math.round(y + Math.sin(angle) * pData.currentDistance);
-
                 drawWasmPetal(ctx, petalX, petalY, petalArgs, petalSize, isMe);
             }
 
@@ -1635,44 +1683,27 @@
             drawBodyImg(imgDefendEye, dBlend);
 
             const scale = imgSize / 96;
-
             const leftEyeBaseX = -12 * scale;
             const leftEyeBaseY = -7.5 * scale;
             const rightEyeBaseX = 12 * scale;
             const rightEyeBaseY = -7.5 * scale;
-
             const highlightMove = 6 * scale;
             const facingAngle = pData.facingAngle || 0;
-
             const eyeOffsetXScale = 0.65;
             const eyeOffsetYScale = 1.15;
-
             const offsetX = Math.cos(facingAngle) * highlightMove * eyeOffsetXScale;
             const offsetY = Math.sin(facingAngle) * highlightMove * eyeOffsetYScale;
-
             const highlightRadius = 5 * scale;
 
             ctx.save();
             ctx.fillStyle = 'white';
 
             ctx.beginPath();
-            ctx.arc(
-                x + leftEyeBaseX + offsetX,
-                y + leftEyeBaseY + offsetY,
-                highlightRadius,
-                0,
-                Math.PI * 2
-            );
+            ctx.arc(x + leftEyeBaseX + offsetX, y + leftEyeBaseY + offsetY, highlightRadius, 0, Math.PI * 2);
             ctx.fill();
 
             ctx.beginPath();
-            ctx.arc(
-                x + rightEyeBaseX + offsetX,
-                y + rightEyeBaseY + offsetY,
-                highlightRadius,
-                0,
-                Math.PI * 2
-            );
+            ctx.arc(x + rightEyeBaseX + offsetX, y + rightEyeBaseY + offsetY, highlightRadius, 0, Math.PI * 2);
             ctx.fill();
             ctx.restore();
 
@@ -1751,27 +1782,23 @@
                     if (!p) continue;
 
                     if (socket && id === socket.id) {
-                        drawPlayer(player.screenX, player.screenY, {
-                            ...player,
-                            username: currentUsername
-                        }, true);
+                        drawPlayer(player.screenX, player.screenY, { ...player, username: currentUsername }, true);
                     } else {
                         if (p.username === currentUsername) continue;
 
                         const drawX = player.screenX + (p.worldX - player.worldX);
                         const drawY = player.screenY + (p.worldY - player.worldY);
 
-                        if (
-                            drawX > -100 && drawX < logicalWidth + 100 &&
-                            drawY > -100 && drawY < logicalHeight + 100
-                        ) {
+                        if (drawX > -100 && drawX < logicalWidth + 100 && drawY > -100 && drawY < logicalHeight + 100) {
                             drawPlayer(drawX, drawY, p, false);
                         }
                     }
                 }
 
+                drawLoadoutSlots();
                 drawInventoryButton();
                 drawInventoryPanel();
+                drawDraggedCard();
             } else {
                 ctx.save();
                 ctx.fillStyle = 'rgba(0,0,0,0.15)';

@@ -1,6 +1,7 @@
 {
   "name": "my-florr",
   "version": "1.0.0",
+  "description": "My Florr multiplayer demo",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
