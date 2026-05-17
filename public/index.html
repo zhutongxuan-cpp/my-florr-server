@@ -23,9 +23,7 @@
             --shadow: 0 18px 60px rgba(0, 0, 0, 0.35);
         }
 
-        * {
-            box-sizing: border-box;
-        }
+        * { box-sizing: border-box; }
 
         body {
             margin: 0;
@@ -69,7 +67,6 @@
             text-align: center;
             font-size: 30px;
             font-weight: 800;
-            letter-spacing: 0.5px;
         }
 
         .auth-subtitle {
@@ -97,7 +94,6 @@
             color: white;
             outline: none;
             font-size: 15px;
-            transition: 0.2s;
         }
 
         .auth-box input:focus {
@@ -128,25 +124,11 @@
             font-size: 15px;
             font-weight: 700;
             color: white;
-            transition: transform 0.15s, opacity 0.15s, background 0.2s;
-        }
-
-        .auth-box button:hover {
-            transform: translateY(-1px);
-        }
-
-        .auth-box button:active {
-            transform: translateY(0);
-        }
-
-        .auth-box button:disabled {
-            opacity: 0.65;
-            cursor: not-allowed;
-            transform: none;
         }
 
         #loginBtn { background: var(--green); }
         #loginBtn:hover { background: var(--green-hover); }
+
         #registerBtn { background: var(--blue); }
         #registerBtn:hover { background: var(--blue-hover); }
 
@@ -189,7 +171,6 @@
             background: rgba(17, 24, 39, 0.72);
             border: 1px solid rgba(255,255,255,0.08);
             backdrop-filter: blur(8px);
-            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
         }
 
         #welcomeText {
@@ -208,29 +189,13 @@
             height: 10px;
             border-radius: 50%;
             background: var(--gray);
-            box-shadow: 0 0 12px rgba(255,255,255,0.2);
             flex-shrink: 0;
         }
 
-        .status-connected .status-dot {
-            background: var(--green);
-            box-shadow: 0 0 12px rgba(34, 197, 94, 0.7);
-        }
-
-        .status-connecting .status-dot {
-            background: var(--yellow);
-            box-shadow: 0 0 12px rgba(245, 158, 11, 0.7);
-        }
-
-        .status-disconnected .status-dot {
-            background: var(--red);
-            box-shadow: 0 0 12px rgba(239, 68, 68, 0.7);
-        }
-
-        .status-reconnected .status-dot {
-            background: #22d3ee;
-            box-shadow: 0 0 12px rgba(34, 211, 238, 0.7);
-        }
+        .status-connected .status-dot { background: var(--green); }
+        .status-connecting .status-dot { background: var(--yellow); }
+        .status-disconnected .status-dot { background: var(--red); }
+        .status-reconnected .status-dot { background: #22d3ee; }
 
         #logoutBtn {
             pointer-events: auto;
@@ -241,14 +206,9 @@
             color: white;
             font-weight: 700;
             cursor: pointer;
-            transition: 0.2s;
-            box-shadow: 0 8px 18px rgba(0,0,0,0.18);
         }
 
-        #logoutBtn:hover {
-            background: var(--red-hover);
-            transform: translateY(-1px);
-        }
+        #logoutBtn:hover { background: var(--red-hover); }
 
         #loadingMask {
             position: fixed;
@@ -301,11 +261,11 @@
             <p class="auth-subtitle">登录或注册后进入花瓣世界</p>
 
             <label for="usernameInput">用户名</label>
-            <input id="usernameInput" type="text" maxlength="15" placeholder="请输入用户名">
+            <input id="usernameInput" class="textInput" type="text" maxlength="15" placeholder="请输入用户名">
             <div class="auth-hint">3-15位，只能包含中文、字母、数字、下划线</div>
 
             <label for="passwordInput">密码</label>
-            <input id="passwordInput" type="password" maxlength="15" placeholder="请输入密码">
+            <input id="passwordInput" class="textInput" type="password" maxlength="15" placeholder="请输入密码">
             <div class="auth-hint">5-15位，必须同时包含字母和数字</div>
 
             <div class="auth-actions">
@@ -328,7 +288,6 @@
         if (!CanvasRenderingContext2D.prototype.roundRect) {
             CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
                 const radius = typeof r === 'number' ? r : 0;
-                this.beginPath();
                 this.moveTo(x + radius, y);
                 this.lineTo(x + w - radius, y);
                 this.quadraticCurveTo(x + w, y, x + w, y + radius);
@@ -343,11 +302,11 @@
         }
 
         const authPanel = document.getElementById('authPanel');
-        let usernameInput = document.getElementById('usernameInput');
-        let passwordInput = document.getElementById('passwordInput');
-        let loginBtn = document.getElementById('loginBtn');
-        let registerBtn = document.getElementById('registerBtn');
-        let authMessage = document.getElementById('authMessage');
+        const usernameInput = document.getElementById('usernameInput');
+        const passwordInput = document.getElementById('passwordInput');
+        const loginBtn = document.getElementById('loginBtn');
+        const registerBtn = document.getElementById('registerBtn');
+        const authMessage = document.getElementById('authMessage');
         const topBar = document.getElementById('topBar');
         const welcomeText = document.getElementById('welcomeText');
         const logoutBtn = document.getElementById('logoutBtn');
@@ -355,7 +314,6 @@
         const connectionStatus = document.getElementById('connectionStatus');
         const connectionStatusCard = document.getElementById('connectionStatusCard');
         const wasmStatus = document.getElementById('wasmStatus');
-        const authBox = authPanel.querySelector('.auth-box');
 
         let socket = null;
         let loggedIn = false;
@@ -365,50 +323,12 @@
         let hadConnectedBefore = false;
         let reconnecting = false;
 
-        function repairAuthPanelMarkup() {
-            if (!authBox) return;
-            authBox.innerHTML = `
-                <h1 class="auth-title">My Florr.io</h1>
-                <p class="auth-subtitle">登录或注册后进入花瓣世界</p>
-                <label for="usernameInput">用户名</label>
-                <input id="usernameInput" type="text" maxlength="15" placeholder="请输入用户名">
-                <div class="auth-hint">3-15位，只能包含中文、字母、数字、下划线</div>
-                <label for="passwordInput">密码</label>
-                <input id="passwordInput" type="password" maxlength="15" placeholder="请输入密码">
-                <div class="auth-hint">5-15位，必须同时包含字母和数字</div>
-                <div class="auth-actions">
-                    <button id="loginBtn">登录</button>
-                    <button id="registerBtn">注册</button>
-                </div>
-                <div id="authMessage"></div>
-            `;
-        }
-
         let logicalWidth = window.innerWidth;
         let logicalHeight = window.innerHeight;
 
         function setAuthMessage(msg, color = '#fcd34d') {
             authMessage.textContent = msg;
             authMessage.style.color = color;
-        }
-
-        function bindAuthControls() {
-            usernameInput = document.getElementById('usernameInput');
-            passwordInput = document.getElementById('passwordInput');
-            loginBtn = document.getElementById('loginBtn');
-            registerBtn = document.getElementById('registerBtn');
-            authMessage = document.getElementById('authMessage');
-
-            loginBtn.addEventListener('click', handleLogin);
-            registerBtn.addEventListener('click', handleRegister);
-
-            usernameInput.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') handleLogin();
-            });
-
-            passwordInput.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') handleLogin();
-            });
         }
 
         function setConnectionStatus(text, type) {
@@ -428,6 +348,85 @@
             return res.json();
         }
 
+        function makePetalCard(petalId = 1, rarity = 0) {
+            return {
+                petalId,
+                rarity,
+                name: 'Basic'
+            };
+        }
+
+        const loadoutState = {
+            slotRects: Array.from({ length: 5 }, () => ({ x: 0, y: 0, width: 0, height: 0 })),
+            slots: Array.from({ length: 5 }, () => makePetalCard(1, 0))
+        };
+
+        const player = {
+            username: '',
+            screenX: 0,
+            screenY: 0,
+            worldX: 0,
+            worldY: 0,
+            petalCount: 5,
+            normalDistance: 45,
+            attackDistance: 90,
+            defendDistance: 36,
+            currentDistance: 45,
+            targetDistance: 45,
+            rotationAngle: 0,
+            rotationSpeed: 0.05,
+            facingAngle: 0,
+            attackBlend: 0,
+            defendBlend: 0,
+            targetAttackBlend: 0,
+            targetDefendBlend: 0,
+            maxSpeed: 6,
+            maxMouseDist: 150,
+            mouseX: 0,
+            mouseY: 0,
+            inventory: []
+        };
+
+        const inventoryState = {
+            open: false,
+            hoverButton: false,
+            buttonRect: { x: 0, y: 0, width: 0, height: 0 },
+            closeRect: { x: 0, y: 0, width: 0, height: 0 },
+            panelRect: { x: 0, y: 0, width: 0, height: 0 },
+            cardRects: []
+        };
+
+        const dragState = {
+            active: false,
+            source: null,
+            item: null,
+            count: 0,
+            pointerX: 0,
+            pointerY: 0,
+            angle: 0,
+            angleDir: 1,
+            hoverSlotIndex: -1
+        };
+
+        const mouseState = { left: false, right: false };
+
+        const PETAL_NAME_BY_ID = {
+            1: 'Basic'
+        };
+
+        const RARITY_NAME_BY_LEVEL = {
+            0: 'Common',
+            1: 'Uncommon',
+            2: 'Rare',
+            3: 'Epic',
+            4: 'Legendary',
+            5: 'Mythic'
+        };
+
+        function syncPetalCountFromLoadout() {
+            player.petalCount = loadoutState.slots.filter(Boolean).length;
+        }
+
         function resetPlayerState() {
             player.worldX = 0;
             player.worldY = 0;
@@ -439,15 +438,14 @@
             player.defendBlend = 0;
             player.targetAttackBlend = 0;
             player.targetDefendBlend = 0;
-            player.inventory = Array.from({ length: 5 }, () => ({
-                petalId: 1,
-                rarity: 0,
-                name: 'Basic'
-            }));
+
+            player.inventory = [];
+            loadoutState.slots = Array.from({ length: 5 }, () => makePetalCard(1, 0));
+            syncPetalCountFromLoadout();
+
             inventoryState.open = false;
             inventoryState.hoverButton = false;
             inventoryState.cardRects = [];
-            loadoutState.slots = Array(5).fill(null);
             dragState.active = false;
             dragState.source = null;
             dragState.item = null;
@@ -522,7 +520,6 @@
             });
 
             socket.on('connect', () => {
-                console.log('Socket 已连接', socket.id);
                 otherPlayers = {};
                 remoteLogoutHandled = false;
 
@@ -561,8 +558,7 @@
                 setConnectionStatus('已重连', 'reconnected');
             });
 
-            socket.on('connect_error', async (err) => {
-                console.error('Socket 连接失败:', err);
+            socket.on('connect_error', async () => {
                 reconnecting = true;
                 setConnectionStatus('连接中', 'connecting');
 
@@ -572,13 +568,11 @@
                         await forceBackToLogin('登录已失效，请重新登录');
                     }
                 } catch (e) {
-                    console.error('检查登录状态失败:', e);
+                    console.error(e);
                 }
             });
 
             socket.on('disconnect', async (reason) => {
-                console.log('Socket 断开:', reason);
-
                 if (reason === 'io client disconnect') {
                     setConnectionStatus('已断开', 'disconnected');
                     return;
@@ -701,17 +695,12 @@
             disconnectSocket();
 
             try {
-                const result = await fetchJSON('/api/logout', {
+                await fetchJSON('/api/logout', {
                     method: 'POST',
                     body: JSON.stringify({})
                 });
-
-                if (!result.success) {
-                    alert(result.message || '退出登录失败');
-                }
             } catch (err) {
                 console.error(err);
-                alert('退出登录请求失败');
             }
 
             resetPlayerState();
@@ -727,9 +716,22 @@
             showAuthPanel();
         }
 
-        repairAuthPanelMarkup();
-        bindAuthControls();
+        loginBtn.addEventListener('click', handleLogin);
+        registerBtn.addEventListener('click', handleRegister);
         logoutBtn.addEventListener('click', handleLogout);
+
+        usernameInput.addEventListener('keydown', (e) => {
+            e.stopPropagation();
+            if (e.key === 'Enter') handleLogin();
+        });
+        passwordInput.addEventListener('keydown', (e) => {
+            e.stopPropagation();
+            if (e.key === 'Enter') handleLogin();
+        });
+        usernameInput.addEventListener('keypress', (e) => e.stopPropagation());
+        passwordInput.addEventListener('keypress', (e) => e.stopPropagation());
+        usernameInput.addEventListener('keyup', (e) => e.stopPropagation());
+        passwordInput.addEventListener('keyup', (e) => e.stopPropagation());
 
         function resizeCanvas() {
             logicalWidth = window.innerWidth;
@@ -768,72 +770,6 @@
 
         const imgInventory = new Image();
         imgInventory.src = '/img/Inventory.png';
-
-        const player = {
-            username: '',
-            screenX: 0,
-            screenY: 0,
-            worldX: 0,
-            worldY: 0,
-            petalCount: 5,
-            normalDistance: 45,
-            attackDistance: 90,
-            defendDistance: 36,
-            currentDistance: 45,
-            targetDistance: 45,
-            rotationAngle: 0,
-            rotationSpeed: 0.05,
-            facingAngle: 0,
-            attackBlend: 0,
-            defendBlend: 0,
-            targetAttackBlend: 0,
-            targetDefendBlend: 0,
-            maxSpeed: 6,
-            maxMouseDist: 150,
-            mouseX: 0,
-            mouseY: 0,
-            inventory: Array.from({ length: 5 }, () => ({
-                petalId: 1,
-                rarity: 0,
-                name: 'Basic'
-            }))
-        };
-
-        const inventoryState = {
-            open: false,
-            hoverButton: false,
-            buttonRect: { x: 0, y: 0, width: 0, height: 0 },
-            closeRect: { x: 0, y: 0, width: 0, height: 0 },
-            panelRect: { x: 0, y: 0, width: 0, height: 0 },
-            cardRects: []
-        };
-
-        const loadoutState = {
-            slotRects: Array.from({ length: 5 }, () => ({ x: 0, y: 0, width: 0, height: 0 })),
-            slots: Array(5).fill(null)
-        };
-
-        const dragState = {
-            active: false,
-            source: null,
-            item: null,
-            count: 0,
-            pointerX: 0,
-            pointerY: 0,
-            angle: 0,
-            angleDir: 1,
-            hoverSlotIndex: -1
-        };
-
-        const PETAL_NAME_BY_ID = { 1: 'Basic' };
-        const RARITY_NAME_BY_LEVEL = {
-            0: 'Common',
-            1: 'Uncommon',
-            2: 'Rare',
-            3: 'Epic',
-            4: 'Legendary',
-            5: 'Mythic'
-        };
 
         function setRect(rect, x, y, width, height) {
             rect.x = x;
@@ -886,7 +822,7 @@
             const grouped = new Map();
 
             for (const petal of player.inventory) {
-                const petalId = Number(petal?.petalId ?? petal?.id ?? 1) || 1;
+                const petalId = Number(petal?.petalId ?? 1) || 1;
                 const rarity = Number(petal?.rarity ?? 0) || 0;
                 const name = String(petal?.name || getPetalName(petalId));
                 const key = `${petalId}:${rarity}`;
@@ -907,15 +843,19 @@
 
         function clonePetalItem(item) {
             return {
-                petalId: Number(item?.petalId ?? item?.id ?? 1) || 1,
+                petalId: Number(item?.petalId ?? 1) || 1,
                 rarity: Number(item?.rarity ?? 0) || 0,
-                name: String(item?.name || getPetalName(item?.petalId ?? item?.id ?? 1))
+                name: String(item?.name || getPetalName(item?.petalId ?? 1))
             };
+        }
+
+        function addInventoryItem(item) {
+            player.inventory.push(clonePetalItem(item));
         }
 
         function removeOneInventoryItem(petalId, rarity) {
             const index = player.inventory.findIndex(item =>
-                Number(item?.petalId ?? item?.id ?? 1) === petalId &&
+                Number(item?.petalId ?? 1) === petalId &&
                 Number(item?.rarity ?? 0) === rarity
             );
             if (index === -1) return null;
@@ -923,16 +863,10 @@
             return clonePetalItem(removed);
         }
 
-        function addInventoryItem(item) {
-            player.inventory.push(clonePetalItem(item));
-        }
-
         function getInventoryEntryAtPoint(x, y) {
             for (let i = inventoryState.cardRects.length - 1; i >= 0; i--) {
                 const rect = inventoryState.cardRects[i];
-                if (pointInRect(x, y, rect)) {
-                    return rect.entry;
-                }
+                if (pointInRect(x, y, rect)) return rect.entry;
             }
             return null;
         }
@@ -948,9 +882,6 @@
             const item = removeOneInventoryItem(entry.petalId, entry.rarity);
             if (!item) return false;
 
-            mouseState.left = false;
-            mouseState.right = false;
-            updateStance();
             dragState.active = true;
             dragState.source = 'inventory';
             dragState.item = item;
@@ -968,9 +899,8 @@
             if (!item) return false;
 
             loadoutState.slots[slotIndex] = null;
-            mouseState.left = false;
-            mouseState.right = false;
-            updateStance();
+            syncPetalCountFromLoadout();
+
             dragState.active = true;
             dragState.source = `slot:${slotIndex}`;
             dragState.item = clonePetalItem(item);
@@ -990,30 +920,36 @@
             dragState.item = null;
             dragState.count = 0;
             dragState.hoverSlotIndex = -1;
+            syncPetalCountFromLoadout();
         }
 
         function stopDraggingToSlot(slotIndex) {
             if (!dragState.item) return;
-            if (loadoutState.slots[slotIndex]) addInventoryItem(loadoutState.slots[slotIndex]);
+
+            if (loadoutState.slots[slotIndex]) {
+                addInventoryItem(loadoutState.slots[slotIndex]);
+            }
+
             loadoutState.slots[slotIndex] = clonePetalItem(dragState.item);
             dragState.active = false;
             dragState.source = null;
             dragState.item = null;
             dragState.count = 0;
             dragState.hoverSlotIndex = -1;
+            syncPetalCountFromLoadout();
         }
 
         resizeCanvas();
+        syncPetalCountFromLoadout();
         player.mouseX = player.screenX;
         player.mouseY = player.screenY;
-
-        const mouseState = { left: false, right: false };
 
         window.addEventListener('mousemove', (e) => {
             player.mouseX = e.clientX;
             player.mouseY = e.clientY;
             dragState.pointerX = e.clientX;
             dragState.pointerY = e.clientY;
+
             if (dragState.active) {
                 dragState.angle += 0.05 * dragState.angleDir;
                 if (dragState.angle > 0.22 || dragState.angle < -0.22) {
@@ -1021,6 +957,7 @@
                 }
                 dragState.hoverSlotIndex = getSlotIndexAtPoint(e.clientX, e.clientY);
             }
+
             inventoryState.hoverButton =
                 loggedIn &&
                 !inventoryState.open &&
@@ -1046,6 +983,7 @@
 
         window.addEventListener('mousedown', (e) => {
             if (!loggedIn) return;
+
             if (e.button !== 0) {
                 if (e.button === 2 && !inventoryState.open && !dragState.active) {
                     mouseState.right = true;
@@ -1076,14 +1014,6 @@
 
             if (pointInRect(e.clientX, e.clientY, inventoryState.buttonRect)) {
                 inventoryState.open = !inventoryState.open;
-                if (inventoryState.open) {
-                    mouseState.left = false;
-                    mouseState.right = false;
-                    updateStance();
-                }
-                inventoryState.hoverButton =
-                    !inventoryState.open &&
-                    pointInRect(e.clientX, e.clientY, inventoryState.buttonRect);
                 return;
             }
 
@@ -1116,6 +1046,7 @@
             if (e.button === 2) {
                 mouseState.right = false;
             }
+
             updateStance();
         });
 
@@ -1145,6 +1076,7 @@
 
         function drawUsername(x, y, username) {
             if (!username) return;
+
             ctx.save();
             ctx.font = '14px Arial';
             ctx.textAlign = 'center';
@@ -1168,6 +1100,7 @@
             ctx.fillStyle = hovered ? 'rgba(255,255,255,0.18)' : 'rgba(12,18,29,0.54)';
             ctx.strokeStyle = hovered ? 'rgba(255,255,255,0.42)' : 'rgba(255,255,255,0.18)';
             ctx.lineWidth = 2;
+            ctx.beginPath();
             ctx.roundRect(0, 0, rect.width, rect.height, 16);
             ctx.fill();
             ctx.stroke();
@@ -1175,12 +1108,6 @@
             if (imgInventory.complete) {
                 const pad = hovered ? 8 : 10;
                 ctx.drawImage(imgInventory, pad, pad, rect.width - pad * 2, rect.height - pad * 2);
-            }
-
-            if (hovered) {
-                ctx.fillStyle = 'rgba(255,255,255,0.10)';
-                ctx.roundRect(4, 4, rect.width - 8, rect.height - 8, 14);
-                ctx.fill();
             }
 
             ctx.restore();
@@ -1193,6 +1120,7 @@
             ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
             ctx.strokeStyle = 'rgba(255,255,255,0.10)';
             ctx.lineWidth = 1.5;
+            ctx.beginPath();
             ctx.roundRect(0, 0, size, size + 46, 14);
             ctx.fill();
             ctx.stroke();
@@ -1200,11 +1128,12 @@
             const spriteSize = Math.round(size * 0.78);
             const spriteX = Math.round((size - spriteSize) / 2);
             const spriteY = 12;
+
             drawWasmPetal(
                 ctx,
                 spriteX + spriteSize / 2,
                 spriteY + spriteSize / 2,
-                [96, entry.petalId, entry.rarity, 1],
+                [128, entry.petalId, entry.rarity, 1],
                 spriteSize,
                 false
             );
@@ -1245,21 +1174,24 @@
 
                 ctx.save();
                 ctx.translate(rect.x, rect.y);
+
                 ctx.fillStyle = hovered ? 'rgba(255,255,255,0.18)' : 'rgba(10, 15, 26, 0.72)';
                 ctx.strokeStyle = hovered ? 'rgba(250, 204, 21, 0.85)' : 'rgba(255,255,255,0.16)';
                 ctx.lineWidth = hovered ? 3 : 2;
+                ctx.beginPath();
                 ctx.roundRect(0, 0, rect.width, rect.height, 18);
                 ctx.fill();
                 ctx.stroke();
 
                 if (item) {
-                    drawWasmPetal(ctx, rect.width / 2, rect.height / 2, [96, item.petalId, item.rarity, 1], 68, false);
-                } else {
-                    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
-                    ctx.setLineDash([6, 6]);
-                    ctx.roundRect(12, 12, rect.width - 24, rect.height - 24, 12);
-                    ctx.stroke();
-                    ctx.setLineDash([]);
+                    drawWasmPetal(
+                        ctx,
+                        rect.width / 2,
+                        rect.height / 2,
+                        [128, item.petalId, item.rarity, 1],
+                        68,
+                        false
+                    );
                 }
 
                 ctx.restore();
@@ -1270,17 +1202,20 @@
             if (!dragState.active || !dragState.item) return;
 
             const size = 148;
+
             ctx.save();
             ctx.translate(dragState.pointerX, dragState.pointerY);
             ctx.rotate(dragState.angle);
             ctx.scale(1.12, 1.12);
             ctx.translate(-size / 2, -size / 2);
+
             drawInventoryCard(0, 0, size, {
                 petalId: dragState.item.petalId,
                 rarity: dragState.item.rarity,
                 name: dragState.item.name,
                 count: 1
             });
+
             ctx.restore();
         }
 
@@ -1291,6 +1226,7 @@
             const close = inventoryState.closeRect;
             const entries = getSortedInventoryEntries();
             inventoryState.cardRects = [];
+
             const columns = Math.max(3, Math.floor((panel.width - 64) / 152));
             const cardWidth = Math.min(132, Math.floor((panel.width - 64 - (columns - 1) * 18) / columns));
             const cardHeight = cardWidth + 46;
@@ -1304,6 +1240,7 @@
             ctx.fillStyle = 'rgba(15, 23, 42, 0.96)';
             ctx.strokeStyle = 'rgba(255,255,255,0.10)';
             ctx.lineWidth = 2;
+            ctx.beginPath();
             ctx.roundRect(panel.x, panel.y, panel.width, panel.height, 22);
             ctx.fill();
             ctx.stroke();
@@ -1319,8 +1256,10 @@
             ctx.fillText(`Petals ${player.inventory.length}`, panel.x + 24, panel.y + 54);
 
             ctx.fillStyle = 'rgba(255,255,255,0.08)';
+            ctx.beginPath();
             ctx.roundRect(close.x, close.y, close.width, close.height, 10);
             ctx.fill();
+
             ctx.fillStyle = '#f8fafc';
             ctx.font = 'bold 22px Arial';
             ctx.textAlign = 'center';
@@ -1332,6 +1271,7 @@
                 const row = Math.floor(index / columns);
                 const cardX = startX + column * (cardWidth + 18);
                 const cardY = startY + row * (cardHeight + 18);
+
                 inventoryState.cardRects.push({
                     x: cardX,
                     y: cardY,
@@ -1339,6 +1279,7 @@
                     height: cardHeight,
                     entry
                 });
+
                 drawInventoryCard(cardX, cardY, cardWidth, entry);
             });
 
@@ -1348,7 +1289,6 @@
         // =========================
         // WASM 花瓣渲染
         // =========================
-
         const wasmHiddenCanvas = document.createElement('canvas');
         wasmHiddenCanvas.width = 1024;
         wasmHiddenCanvas.height = 1024;
@@ -1462,9 +1402,7 @@
                 window.__wasmReadyPoll = null;
             }
 
-            preloadWasmPetal([128, 1, 0, 2]).catch(err => {
-                console.error('预加载花瓣失败:', err);
-            });
+            preloadWasmPetal([128, 1, 0, 1]).catch(console.error);
         }
 
         window.Module = {
@@ -1536,15 +1474,6 @@
             return null;
         }
 
-        function loadImageFromDataURL(dataURL) {
-            return new Promise((resolve, reject) => {
-                const img = new Image();
-                img.onload = () => resolve(img);
-                img.onerror = reject;
-                img.src = dataURL;
-            });
-        }
-
         const petalSpriteCache = new Map();
         const petalSpritePending = new Map();
 
@@ -1561,18 +1490,19 @@
             const before = getTrackedCanvasSnapshot();
             const startedAt = performance.now();
 
-            let ret;
-            try {
-                ret = Module._Util_GeneratePetalImage.apply(null, args);
-            } catch (e) {
-                throw new Error(e && e.message ? e.message : String(e));
-            }
+            let ret = Module._Util_GeneratePetalImage.apply(null, args);
 
             if (typeof ret === 'number' && ret > 0) {
                 try {
                     const maybeStr = readCString(ret);
                     if (maybeStr && isDataURL(maybeStr)) {
-                        return await loadImageFromDataURL(maybeStr);
+                        const img = new Image();
+                        await new Promise((resolve, reject) => {
+                            img.onload = resolve;
+                            img.onerror = reject;
+                            img.src = maybeStr;
+                        });
+                        return img;
                     }
                 } catch (e) {}
             }
@@ -1582,18 +1512,12 @@
             const after = getTrackedCanvasSnapshot();
             const sourceCanvas = pickBestCanvas(before, after, startedAt);
 
-            if (!sourceCanvas) {
-                throw new Error('没找到 wasm 实际绘制的 canvas');
-            }
+            if (!sourceCanvas) throw new Error('没找到 wasm 实际绘制的 canvas');
 
             const copy = document.createElement('canvas');
             copy.width = sourceCanvas.width;
             copy.height = sourceCanvas.height;
-
-            const copyCtx = copy.getContext('2d');
-            copyCtx.clearRect(0, 0, copy.width, copy.height);
-            copyCtx.drawImage(sourceCanvas, 0, 0);
-
+            copy.getContext('2d').drawImage(sourceCanvas, 0, 0);
             return copy;
         }
 
@@ -1643,7 +1567,7 @@
 
             if (!petalSpritePending.has(key) && window.__wasmReady) {
                 getPetalSprite(args).catch(err => {
-                    console.error('获取 wasm 花瓣失败:', err);
+                    console.error(err);
                     setWasmStatus('WASM 花瓣：加载失败');
                 });
             }
@@ -1652,15 +1576,29 @@
             return false;
         }
 
-        function drawPlayer(x, y, pData, isMe) {
-            const petalArgs = [128, 1, 0, 2];
-            const petalSize = 50;
+        function getEquippedPetals() {
+            return loadoutState.slots.filter(Boolean);
+        }
 
-            for (let i = 0; i < pData.petalCount; i++) {
-                const angle = pData.rotationAngle + (i * (Math.PI * 2) / pData.petalCount);
+        function drawPlayer(x, y, pData, isMe) {
+            const petals = isMe
+                ? getEquippedPetals()
+                : Array.from({ length: pData.petalCount || 0 }, () => makePetalCard(1, 0));
+
+            for (let i = 0; i < petals.length; i++) {
+                const petal = petals[i];
+                const angle = pData.rotationAngle + (i * (Math.PI * 2) / Math.max(1, petals.length));
                 const petalX = Math.round(x + Math.cos(angle) * pData.currentDistance);
                 const petalY = Math.round(y + Math.sin(angle) * pData.currentDistance);
-                drawWasmPetal(ctx, petalX, petalY, petalArgs, petalSize, isMe);
+
+                drawWasmPetal(
+                    ctx,
+                    petalX,
+                    petalY,
+                    [128, petal.petalId, petal.rarity, 1],
+                    50,
+                    isMe
+                );
             }
 
             const imgSize = 48;
@@ -1689,10 +1627,8 @@
             const rightEyeBaseY = -7.5 * scale;
             const highlightMove = 6 * scale;
             const facingAngle = pData.facingAngle || 0;
-            const eyeOffsetXScale = 0.65;
-            const eyeOffsetYScale = 1.15;
-            const offsetX = Math.cos(facingAngle) * highlightMove * eyeOffsetXScale;
-            const offsetY = Math.sin(facingAngle) * highlightMove * eyeOffsetYScale;
+            const offsetX = Math.cos(facingAngle) * highlightMove * 0.65;
+            const offsetY = Math.sin(facingAngle) * highlightMove * 1.15;
             const highlightRadius = 5 * scale;
 
             ctx.save();
@@ -1705,6 +1641,7 @@
             ctx.beginPath();
             ctx.arc(x + rightEyeBaseX + offsetX, y + rightEyeBaseY + offsetY, highlightRadius, 0, Math.PI * 2);
             ctx.fill();
+
             ctx.restore();
 
             drawBodyImg(imgNormal, 1);
@@ -1719,6 +1656,7 @@
 
             if (loggedIn) {
                 player.username = currentUsername;
+                syncPetalCountFromLoadout();
 
                 const dx = player.mouseX - player.screenX;
                 const dy = player.mouseY - player.screenY;
@@ -1782,14 +1720,21 @@
                     if (!p) continue;
 
                     if (socket && id === socket.id) {
-                        drawPlayer(player.screenX, player.screenY, { ...player, username: currentUsername }, true);
+                        drawPlayer(player.screenX, player.screenY, {
+                            ...player,
+                            username: currentUsername,
+                            petalCount: player.petalCount
+                        }, true);
                     } else {
                         if (p.username === currentUsername) continue;
 
                         const drawX = player.screenX + (p.worldX - player.worldX);
                         const drawY = player.screenY + (p.worldY - player.worldY);
 
-                        if (drawX > -100 && drawX < logicalWidth + 100 && drawY > -100 && drawY < logicalHeight + 100) {
+                        if (
+                            drawX > -100 && drawX < logicalWidth + 100 &&
+                            drawY > -100 && drawY < logicalHeight + 100
+                        ) {
                             drawPlayer(drawX, drawY, p, false);
                         }
                     }
@@ -1840,6 +1785,7 @@
             }
         }
 
+        resetPlayerState();
         checkLoginStatus();
         initWasm();
         gameLoop();
