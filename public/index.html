@@ -128,7 +128,6 @@
 
         #loginBtn { background: var(--green); }
         #loginBtn:hover { background: var(--green-hover); }
-
         #registerBtn { background: var(--blue); }
         #registerBtn:hover { background: var(--blue-hover); }
 
@@ -405,15 +404,13 @@
             pointerY: 0,
             angle: 0,
             angleDir: 1,
-            hoverSlotIndex: -1
+            hoverSlotIndex: -1,
+            reopenInventoryAfterDrop: false
         };
 
         const mouseState = { left: false, right: false };
 
-        const PETAL_NAME_BY_ID = {
-            1: 'Basic'
-        };
-
+        const PETAL_NAME_BY_ID = { 1: 'Basic' };
         const RARITY_NAME_BY_LEVEL = {
             0: 'Common',
             1: 'Uncommon',
@@ -451,6 +448,9 @@
             dragState.item = null;
             dragState.count = 0;
             dragState.hoverSlotIndex = -1;
+            dragState.angle = 0;
+            dragState.angleDir = 1;
+            dragState.reopenInventoryAfterDrop = false;
             mouseState.left = false;
             mouseState.right = false;
             otherPlayers = {};
@@ -561,7 +561,6 @@
             socket.on('connect_error', async () => {
                 reconnecting = true;
                 setConnectionStatus('连接中', 'connecting');
-
                 try {
                     const result = await fetchJSON('/api/me', { method: 'GET' });
                     if (!result.loggedIn) {
@@ -891,6 +890,9 @@
             dragState.angle = 0;
             dragState.angleDir = 1;
             dragState.hoverSlotIndex = -1;
+            dragState.reopenInventoryAfterDrop = true;
+
+            inventoryState.open = false;
             return true;
         }
 
@@ -910,16 +912,29 @@
             dragState.angle = 0;
             dragState.angleDir = 1;
             dragState.hoverSlotIndex = -1;
+            dragState.reopenInventoryAfterDrop = false;
             return true;
         }
 
-        function stopDraggingToInventory() {
-            if (dragState.item) addInventoryItem(dragState.item);
+        function finishDragCleanup() {
+            const reopen = dragState.reopenInventoryAfterDrop;
             dragState.active = false;
             dragState.source = null;
             dragState.item = null;
             dragState.count = 0;
             dragState.hoverSlotIndex = -1;
+            dragState.angle = 0;
+            dragState.angleDir = 1;
+            dragState.reopenInventoryAfterDrop = false;
+
+            if (reopen) {
+                inventoryState.open = true;
+            }
+        }
+
+        function stopDraggingToInventory() {
+            if (dragState.item) addInventoryItem(dragState.item);
+            finishDragCleanup();
             syncPetalCountFromLoadout();
         }
 
@@ -931,11 +946,7 @@
             }
 
             loadoutState.slots[slotIndex] = clonePetalItem(dragState.item);
-            dragState.active = false;
-            dragState.source = null;
-            dragState.item = null;
-            dragState.count = 0;
-            dragState.hoverSlotIndex = -1;
+            finishDragCleanup();
             syncPetalCountFromLoadout();
         }
 
@@ -951,10 +962,6 @@
             dragState.pointerY = e.clientY;
 
             if (dragState.active) {
-                dragState.angle += 0.05 * dragState.angleDir;
-                if (dragState.angle > 0.22 || dragState.angle < -0.22) {
-                    dragState.angleDir *= -1;
-                }
                 dragState.hoverSlotIndex = getSlotIndexAtPoint(e.clientX, e.clientY);
             }
 
@@ -1198,23 +1205,43 @@
             });
         }
 
-        function drawDraggedCard() {
+        function drawDraggedPureCard() {
             if (!dragState.active || !dragState.item) return;
 
-            const size = 148;
+            const w = 108;
+            const h = 140;
 
             ctx.save();
             ctx.translate(dragState.pointerX, dragState.pointerY);
             ctx.rotate(dragState.angle);
-            ctx.scale(1.12, 1.12);
-            ctx.translate(-size / 2, -size / 2);
+            ctx.translate(-w / 2, -h / 2);
 
-            drawInventoryCard(0, 0, size, {
-                petalId: dragState.item.petalId,
-                rarity: dragState.item.rarity,
-                name: dragState.item.name,
-                count: 1
-            });
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.98)';
+            ctx.strokeStyle = 'rgba(255,255,255,0.16)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.roundRect(0, 0, w, h, 14);
+            ctx.fill();
+            ctx.stroke();
+
+            drawWasmPetal(
+                ctx,
+                w / 2,
+                48,
+                [128, dragState.item.petalId, dragState.item.rarity, 1],
+                64,
+                false
+            );
+
+            ctx.fillStyle = '#f8fafc';
+            ctx.font = 'bold 14px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(dragState.item.name || 'Basic', w / 2, 104, w - 12);
+
+            ctx.fillStyle = '#cbd5e1';
+            ctx.font = '12px Arial';
+            ctx.fillText(getRarityName(dragState.item.rarity), w / 2, 122, w - 12);
 
             ctx.restore();
         }
@@ -1286,9 +1313,6 @@
             ctx.restore();
         }
 
-        // =========================
-        // WASM 花瓣渲染
-        // =========================
         const wasmHiddenCanvas = document.createElement('canvas');
         wasmHiddenCanvas.width = 1024;
         wasmHiddenCanvas.height = 1024;
@@ -1395,14 +1419,13 @@
         function markWasmReady(source) {
             if (window.__wasmReady) return;
             window.__wasmReady = true;
-            console.log('WASM 初始化完成, source =', source);
             setWasmStatus('WASM 花瓣：已就绪');
             if (window.__wasmReadyPoll) {
                 clearInterval(window.__wasmReadyPoll);
                 window.__wasmReadyPoll = null;
             }
-
             preloadWasmPetal([128, 1, 0, 1]).catch(console.error);
+            preloadWasmPetal([128, 1, 0, 2]).catch(console.error);
         }
 
         window.Module = {
@@ -1511,7 +1534,6 @@
 
             const after = getTrackedCanvasSnapshot();
             const sourceCanvas = pickBestCanvas(before, after, startedAt);
-
             if (!sourceCanvas) throw new Error('没找到 wasm 实际绘制的 canvas');
 
             const copy = document.createElement('canvas');
@@ -1595,7 +1617,7 @@
                     ctx,
                     petalX,
                     petalY,
-                    [128, petal.petalId, petal.rarity, 1],
+                    [128, petal.petalId, petal.rarity, 2],
                     50,
                     isMe
                 );
@@ -1653,6 +1675,13 @@
 
         function gameLoop() {
             ctx.clearRect(0, 0, logicalWidth, logicalHeight);
+
+            if (dragState.active) {
+                dragState.angle += 0.035 * dragState.angleDir;
+                if (dragState.angle > 0.18 || dragState.angle < -0.18) {
+                    dragState.angleDir *= -1;
+                }
+            }
 
             if (loggedIn) {
                 player.username = currentUsername;
@@ -1743,7 +1772,7 @@
                 drawLoadoutSlots();
                 drawInventoryButton();
                 drawInventoryPanel();
-                drawDraggedCard();
+                drawDraggedPureCard();
             } else {
                 ctx.save();
                 ctx.fillStyle = 'rgba(0,0,0,0.15)';
