@@ -151,6 +151,9 @@ function requireLogin(req, res, next) {
 
 const onlinePlayers = {};
 const userToSocketId = new Map();
+const SERVER_TICK_RATE = 30;
+const SERVER_MAX_SPEED = 6;
+const SERVER_MAX_MOUSE_DIST = 150;
 
 function buildSafePlayerData(socketId) {
     const p = onlinePlayers[socketId];
@@ -177,6 +180,45 @@ function broadcastGameState() {
     }
     io.emit('gameState', snapshot);
 }
+
+setInterval(() => {
+    for (const socketId of Object.keys(onlinePlayers)) {
+        const p = onlinePlayers[socketId];
+        if (!p) continue;
+
+        const dx = Number(p.input?.mouseDX ?? 0);
+        const dy = Number(p.input?.mouseDY ?? 0);
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist > 0.0001) {
+            p.facingAngle = Math.atan2(dy, dx);
+
+            const speedRatio = Math.min(dist / SERVER_MAX_MOUSE_DIST, 1);
+            const currentSpeed = SERVER_MAX_SPEED * speedRatio;
+
+            p.worldX += (dx / dist) * currentSpeed;
+            p.worldY += (dy / dist) * currentSpeed;
+        }
+
+        if (p.input?.leftDown) {
+            p.currentDistance += (90 - p.currentDistance) * 0.15;
+            p.attackBlend += (1 - p.attackBlend) * 0.15;
+            p.defendBlend += (0 - p.defendBlend) * 0.15;
+        } else if (p.input?.rightDown) {
+            p.currentDistance += (36 - p.currentDistance) * 0.15;
+            p.attackBlend += (0 - p.attackBlend) * 0.15;
+            p.defendBlend += (1 - p.defendBlend) * 0.15;
+        } else {
+            p.currentDistance += (45 - p.currentDistance) * 0.15;
+            p.attackBlend += (0 - p.attackBlend) * 0.15;
+            p.defendBlend += (0 - p.defendBlend) * 0.15;
+        }
+
+        p.rotationAngle += 0.05;
+    }
+
+    broadcastGameState();
+}, 1000 / SERVER_TICK_RATE);
 
 app.get('/api/me', (req, res) => {
     if (req.session?.userId && req.session?.username) {
@@ -426,29 +468,33 @@ io.on('connection', async (socket) => {
             attackBlend: 0,
             defendBlend: 0,
             petalCount,
-            loadout: savedLoadout
+            loadout: savedLoadout,
+            input: {
+                mouseDX: 0,
+                mouseDY: 0,
+                leftDown: false,
+                rightDown: false
+            }
         };
 
         broadcastGameState();
 
-        socket.on('playerUpdate', (data) => {
+        socket.on('playerInput', (data) => {
             const p = onlinePlayers[socket.id];
             if (!p) return;
 
-            if (typeof data.worldX === 'number') p.worldX = data.worldX;
-            if (typeof data.worldY === 'number') p.worldY = data.worldY;
-            if (typeof data.currentDistance === 'number') p.currentDistance = data.currentDistance;
-            if (typeof data.rotationAngle === 'number') p.rotationAngle = data.rotationAngle;
-            if (typeof data.facingAngle === 'number') p.facingAngle = data.facingAngle;
-            if (typeof data.attackBlend === 'number') p.attackBlend = data.attackBlend;
-            if (typeof data.defendBlend === 'number') p.defendBlend = data.defendBlend;
-            if (typeof data.petalCount === 'number') p.petalCount = data.petalCount;
-            if (Array.isArray(data.loadout)) p.loadout = normalizeLoadout(data.loadout);
+            const mouseDX = Number(data?.mouseDX ?? 0);
+            const mouseDY = Number(data?.mouseDY ?? 0);
 
-            socket.emit('movementCorrected', {
-                worldX: p.worldX,
-                worldY: p.worldY
-            });
+            p.input.mouseDX = Number.isFinite(mouseDX) ? mouseDX : 0;
+            p.input.mouseDY = Number.isFinite(mouseDY) ? mouseDY : 0;
+            p.input.leftDown = !!data?.leftDown;
+            p.input.rightDown = !!data?.rightDown;
+
+            if (Array.isArray(data?.loadout)) {
+                p.loadout = normalizeLoadout(data.loadout);
+                p.petalCount = p.loadout.filter(Boolean).length;
+            }
         });
 
         socket.on('disconnect', () => {
